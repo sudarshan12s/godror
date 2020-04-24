@@ -136,6 +136,7 @@ type connPool struct {
 	dpiPool  *C.dpiPool
 	params   commonAndPoolParams
 	timeZone *time.Location
+	key      string
 	//tzOffSecs     int
 	//serverVersion VersionInfo
 }
@@ -225,6 +226,32 @@ func (d *drv) createConn(pool *connPool, P commonAndConnParams) (*conn, error) {
 		return nil, err
 	}
 
+	dc, newSession, err := d.acquireConn(pool, P)
+	if err != nil {
+		return nil, err
+	}
+	var poolKey string
+	if pool != nil {
+		poolKey = pool.key
+	}
+	// create connection and initialize it, if needed
+	c := conn{
+		drv: d, Client: d.clientVersion, dpiConn: dc,
+		params:     ConnectionParams{CommonParams: P.CommonParams, ConnParams: P.ConnParams},
+		newSession: pool == nil || newSession,
+		poolKey:    poolKey,
+	}
+	if pool != nil {
+		c.params.PoolParams = pool.params.PoolParams
+		if c.params.Username == "" {
+			c.params.Username = pool.params.Username
+		}
+	}
+	c.init(P.OnInit)
+	return &c, nil
+}
+
+func (d *drv) acquireConn(pool *connPool, P commonAndConnParams) (*C.dpiConn, bool, error) {
 	// initialize ODPI-C structure for common creation parameters; this is only
 	// used when a standalone connection is being created; when a connection is
 	// being acquired from the pool this structure is not needed
@@ -232,7 +259,7 @@ func (d *drv) createConn(pool *connPool, P commonAndConnParams) (*conn, error) {
 	var commonCreateParams C.dpiCommonCreateParams
 	if pool == nil {
 		if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		commonCreateParamsPtr = &commonCreateParams
 	}
@@ -261,7 +288,7 @@ func (d *drv) createConn(pool *connPool, P commonAndConnParams) (*conn, error) {
 	var connCreateParams C.dpiConnCreateParams
 	if C.dpiContext_initConnCreateParams(d.dpiContext,
 		&connCreateParams) == C.DPI_FAILURE {
-		return nil, errors.Errorf("initConnCreateParams: %w", d.getError())
+		return nil, false, errors.Errorf("initConnCreateParams: %w", d.getError())
 	}
 
 	// assign connection class
@@ -319,7 +346,7 @@ func (d *drv) createConn(pool *connPool, P commonAndConnParams) (*conn, error) {
 				defer C.free(unsafe.Pointer(cs))
 				C.dpiData_setBytes(&tempData, cs, C.uint32_t(len(value)))
 			default:
-				return nil, errors.New("Unsupported data type for sharding")
+				return nil, false, errors.New("Unsupported data type for sharding")
 			}
 			columns[i].value = tempData.value
 		}
@@ -357,24 +384,10 @@ func (d *drv) createConn(pool *connPool, P commonAndConnParams) (*conn, error) {
 		commonCreateParamsPtr,
 		&connCreateParams, &dc,
 	) == C.DPI_FAILURE {
-		return nil, errors.Errorf("username=%q dsn=%q params=%+v: %w",
+		return nil, false, errors.Errorf("username=%q dsn=%q params=%+v: %w",
 			username, P.DSN, connCreateParams, d.getError())
 	}
-
-	// create connection and initialize it, if needed
-	c := conn{
-		drv: d, Client: d.clientVersion, dpiConn: dc,
-		params:     ConnectionParams{CommonParams: P.CommonParams, ConnParams: P.ConnParams},
-		newSession: pool == nil || connCreateParams.outNewSession == 1,
-	}
-	if pool != nil {
-		c.params.PoolParams = pool.params.PoolParams
-		if c.params.Username == "" {
-			c.params.Username = pool.params.Username
-		}
-	}
-	c.init(P.OnInit)
-	return &c, nil
+	return dc, connCreateParams.outNewSession == 1, nil
 }
 
 // createConnFromParams creates a driver connection given pool parameters and connection
@@ -442,6 +455,7 @@ func (d *drv) getPool(P commonAndPoolParams) (*connPool, error) {
 	if err != nil {
 		return nil, err
 	}
+	pool.key = poolKey
 	d.pools[poolKey] = pool
 	return pool, nil
 }

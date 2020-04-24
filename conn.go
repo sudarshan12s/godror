@@ -49,6 +49,7 @@ type conn struct {
 	tranParams     tranParams
 	mu             sync.RWMutex
 	//currentUser    string
+	poolKey       string
 	drv           *drv
 	dpiConn       *C.dpiConn
 	objTypes      map[string]ObjectType
@@ -776,4 +777,86 @@ func (c *conn) Shutdown(mode ShutdownMode) error {
 // Timezone returns the connection's timezone.
 func (c *conn) Timezone() *time.Location {
 	return c.params.Timezone
+}
+
+var _ = driver.SessionResetter((*conn)(nil))
+
+// ResetSession is called prior to executing a query on the connection
+// if the connection has been used before. If the driver returns driver.ErrBadConn
+// the connection is discarded.
+//
+// This implementation does nothing if the connection is not pooled,
+// but reacquires a new session if it is pooled.
+//
+// This ensures that the session is not stale.
+func (c *conn) ResetSession(ctx context.Context) error {
+	if c == nil {
+		return driver.ErrBadConn
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.poolKey == "" {
+		// not pooled connection
+		if c.dpiConn == nil {
+			return driver.ErrBadConn
+		}
+		return nil
+	}
+
+	c.drv.mu.Lock()
+	pool := c.drv.pools[c.poolKey]
+	c.drv.mu.Unlock()
+	if pool == nil {
+		return nil
+	}
+	P := commonAndConnParams{CommonParams: c.params.CommonParams, ConnParams: c.params.ConnParams}
+	if ctxValue := ctx.Value(paramsCtxKey); ctxValue != nil {
+		var ok bool
+		if P, ok = ctxValue.(commonAndConnParams); ok {
+			// ContextWithUserPassw does not fill ConnParam.DSN
+			if P.DSN == "" {
+				P.DSN = c.params.DSN
+			}
+		}
+	}
+	// Close and then reacquire a fresh dpiConn
+	_ = c.close(false)
+	var err error
+	var newSession bool
+	if c.dpiConn, newSession, err = c.drv.acquireConn(pool, P); err != nil {
+		return errors.Errorf("%v: %w", err, driver.ErrBadConn)
+	}
+
+	if newSession {
+		c.init(P.OnInit)
+	}
+	return nil
+}
+
+// Validator may be implemented by Conn to allow drivers to
+// signal if a connection is valid or if it should be discarded.
+//
+// If implemented, drivers may return the underlying error from queries,
+// even if the connection should be discarded by the connection pool.
+//
+// This implementation returns the underlying session to the OCI session pool,
+// iff this is a pooled connection. ResetSession will reacquire it.
+func (c *conn) IsValid() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.poolKey == "" {
+		return c.dpiConn != nil
+	}
+
+	c.drv.mu.Lock()
+	pool := c.drv.pools[c.poolKey]
+	c.drv.mu.Unlock()
+	if pool == nil {
+		return c.dpiConn != nil
+	}
+	_ = c.close(false)
+	return true
 }
