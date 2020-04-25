@@ -180,7 +180,7 @@ func init() {
 var bufPool = sync.Pool{New: func() interface{} { return bytes.NewBuffer(make([]byte, 0, 1024)) }}
 
 type testLogger struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	enc      *logfmt.Encoder
 	Ts       []*testing.T
 	beHelped []*testing.T
