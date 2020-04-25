@@ -388,6 +388,9 @@ func (c *conn) ServerVersion() (VersionInfo, error) {
 }
 
 func (c *conn) init(onInit func(conn driver.Conn) error) error {
+	if Log != nil {
+		Log("msg", "init connection", "conn", c, "onInit", onInit)
+	}
 	if c.Client.Version == 0 {
 		var err error
 		if c.Client, err = c.drv.ClientVersion(); err != nil {
@@ -818,6 +821,9 @@ func (c *conn) ResetSession(ctx context.Context) error {
 				P.DSN = c.params.DSN
 			}
 		}
+	}
+	if Log != nil {
+		Log("msg", "ResetSession re-acquire session", "pool", pool.key)
 	}
 	// Close and then reacquire a fresh dpiConn
 	_ = c.close(false)

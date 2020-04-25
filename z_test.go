@@ -180,7 +180,7 @@ func init() {
 var bufPool = sync.Pool{New: func() interface{} { return bytes.NewBuffer(make([]byte, 0, 1024)) }}
 
 type testLogger struct {
-	sync.RWMutex
+	mu       sync.Mutex
 	enc      *logfmt.Encoder
 	Ts       []*testing.T
 	beHelped []*testing.T
@@ -195,9 +195,11 @@ func (tl *testLogger) Log(args ...interface{}) error {
 				args[i] = fmt.Sprintf("%+v", args[i])
 			}
 		}
+		tl.mu.Lock()
 		tl.enc.Reset()
 		tl.enc.EncodeKeyvals(args...)
 		tl.enc.EndRecord()
+		tl.mu.Unlock()
 	}
 	return tl.GetLog()(args)
 }
@@ -213,15 +215,15 @@ func (tl *testLogger) GetLog() func(keyvals ...interface{}) error {
 			fmt.Fprintf(buf, "%s=%#v ", keyvals[i], keyvals[i+1])
 		}
 
-		tl.Lock()
+		tl.mu.Lock()
 		for _, t := range tl.beHelped {
 			t.Helper()
 		}
 		tl.beHelped = tl.beHelped[:0]
-		tl.Unlock()
+		tl.mu.Unlock()
 
-		tl.RLock()
-		defer tl.RUnlock()
+		tl.mu.RLock()
+		defer tl.mu.RUnlock()
 		for _, t := range tl.Ts {
 			t.Helper()
 			t.Log(buf.String())
@@ -231,14 +233,14 @@ func (tl *testLogger) GetLog() func(keyvals ...interface{}) error {
 	}
 }
 func (tl *testLogger) enableLogging(t *testing.T) func() {
-	tl.Lock()
+	tl.mu.Lock()
 	tl.Ts = append(tl.Ts, t)
 	tl.beHelped = append(tl.beHelped, t)
-	tl.Unlock()
+	tl.mu.Unlock()
 
 	return func() {
-		tl.Lock()
-		defer tl.Unlock()
+		tl.mu.Lock()
+		defer tl.mu.Unlock()
 		for i, f := range tl.Ts {
 			if f == t {
 				tl.Ts[i] = tl.Ts[0]
@@ -2379,6 +2381,7 @@ func TestObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer testCon.Close()
 
 	cleanup := func() {
 		testDb.Exec("DROP PROCEDURE test_obj_modify")
@@ -2418,14 +2421,14 @@ END;`
 	// create object from the type
 	coll, err := cOt.NewCollection()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("NewCollection:", err)
 	}
 	defer coll.Close()
 
 	// create an element object
 	elt, err := cOt.CollectionOf.NewObject()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("collection.NewObject:", err)
 	}
 	defer elt.Close()
 
