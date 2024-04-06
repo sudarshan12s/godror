@@ -51,6 +51,7 @@ type CommonSimpleParams struct {
 	Timezone                *time.Location
 	ConfigDir, LibDir       string
 	Username, ConnectString string
+	Token, PrivateKey       string
 	Password                Password
 	Charset                 string
 	// StmtCacheSize of 0 means the default, -1 to disable the stmt cache completely
@@ -129,6 +130,12 @@ func (P CommonSimpleParams) String() string {
 	}
 	if P.InitOnNewConn {
 		q.Add("initOnNewConnection", "1")
+	}
+	if P.Token != "" {
+		q.Add("token", P.Token)
+	}
+	if P.PrivateKey != "" {
+		q.Add("privateKey", P.PrivateKey)
 	}
 
 	s = q.String()
@@ -331,6 +338,13 @@ func (P ConnectionParams) string(class, withPassword bool) string {
 	q.Add("poolSessionMaxLifetime", P.MaxLifeTime.String())
 	q.Add("poolSessionTimeout", P.SessionTimeout.String())
 	q.Add("pingInterval", P.PingInterval.String())
+
+	if P.Token != "" {
+		q.Add("token", P.Token)
+	}
+	if P.PrivateKey != "" {
+		q.Add("privateKey", P.PrivateKey)
+	}
 	as := acquireParamsArray(1)
 	defer releaseParamsArray(as)
 	for _, kv := range P.AlterSession {
@@ -443,6 +457,10 @@ func Parse(dataSourceName string) (ConnectionParams, error) {
 					P.Password.Set(value)
 				case "charset":
 					P.Charset = value
+				case "token":
+					P.Token = value
+				case "privateKey":
+					P.PrivateKey = value
 				case "alterSession", "onInit", "shardingKey", "superShardingKey":
 					q.Add(key, value)
 				default:

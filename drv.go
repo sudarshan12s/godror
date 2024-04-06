@@ -82,7 +82,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"github.com/godror/godror/slog"
 	"io"
 	"math"
 	"runtime"
@@ -92,6 +91,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"github.com/godror/godror/slog"
 
 	"github.com/godror/godror/dsn"
 )
@@ -335,7 +336,7 @@ var cUTF8, cDriverName = C.CString("UTF-8"), C.CString(DriverName)
 // initCommonCreateParams initializes ODPI-C common creation parameters used for creating pools and
 // standalone connections. The C strings for the encoding and driver name are
 // defined at the package level for convenience.
-func (d *drv) initCommonCreateParams(P *C.dpiCommonCreateParams, enableEvents bool, stmtCacheSize int, charset string) error {
+func (d *drv) initCommonCreateParams(P *C.dpiCommonCreateParams, enableEvents bool, stmtCacheSize int, charset string, token string, privateKey string, accessTokenC *C.dpiAccessToken) error {
 	// initialize ODPI-C structure for common creation parameters
 	if err := d.checkExec(func() C.int {
 		return C.dpiContext_initCommonCreateParams(d.dpiContext, P)
@@ -367,6 +368,18 @@ func (d *drv) initCommonCreateParams(P *C.dpiCommonCreateParams, enableEvents bo
 		} else {
 			P.stmtCacheSize = C.uint32_t(stmtCacheSize)
 		}
+	}
+
+	if token != "" {
+		mem := C.malloc(C.sizeof_dpiAccessToken)
+		//defer C.free(mem)
+		accessTokenC = (*C.dpiAccessToken)(mem)
+		accessTokenC.token = C.CString(token)
+		accessTokenC.tokenLength = C.uint32_t(len(token))
+	}
+	if privateKey != "" {
+		accessTokenC.privateKey = C.CString(privateKey)
+		accessTokenC.privateKeyLength = C.uint32_t(len(privateKey))
 	}
 
 	return nil
@@ -475,10 +488,16 @@ func (d *drv) acquireConn(pool *connPool, P commonAndConnParams) (*C.dpiConn, bo
 	// used when a standalone connection is being created; when a connection is
 	// being acquired from the pool this structure is not needed
 	var commonCreateParamsPtr *C.dpiCommonCreateParams
+	var cToken, cPrivateKey *C.char
+	var cAccessToken *C.dpiAccessToken
+
 	if pool == nil {
 		var commonCreateParams C.dpiCommonCreateParams
-		if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize, P.Charset); err != nil {
+		if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize, P.Charset, P.Token, P.PrivateKey, cAccessToken); err != nil {
 			return nil, false, nil, err
+		}
+		if P.Token != "" {
+			commonCreateParams.accessToken = cAccessToken
 		}
 		commonCreateParamsPtr = &commonCreateParams
 	}
@@ -499,6 +518,21 @@ func (d *drv) acquireConn(pool *connPool, P commonAndConnParams) (*C.dpiConn, bo
 		}
 		if cConnClass != nil {
 			C.free(unsafe.Pointer(cConnClass))
+		}
+		if cToken != nil {
+			C.free(unsafe.Pointer(cToken))
+		}
+		if cPrivateKey != nil {
+			C.free(unsafe.Pointer(cPrivateKey))
+		}
+		if cAccessToken != nil {
+			if cAccessToken.token != nil {
+				C.free(unsafe.Pointer(cAccessToken.token))
+			}
+			if cAccessToken.privateKey != nil {
+				C.free(unsafe.Pointer(cAccessToken.privateKey))
+			}
+			C.free(unsafe.Pointer(cAccessToken))
 		}
 	}()
 
@@ -527,6 +561,10 @@ func (d *drv) acquireConn(pool *connPool, P commonAndConnParams) (*C.dpiConn, bo
 	// assign external authentication flag (only relevant for standalone
 	// connections)
 	if pool == nil && P.Username == "" && P.Password.IsZero() {
+		connCreateParams.externalAuth = 1
+	}
+
+	if P.PrivateKey != "" {
 		connCreateParams.externalAuth = 1
 	}
 
@@ -737,6 +775,20 @@ func (d *drv) getPool(P commonAndPoolParams) (*connPool, error) {
 	return pool, nil
 }
 
+//export goCallbackHandler
+func tokenCallbackHandler(context *C.void) *C.dpiAccessToken {
+	token := "abc"
+	privateKey := "xyz"
+	var accessTokenC *C.dpiAccessToken
+	mem := C.malloc(C.sizeof_dpiAccessToken)
+	accessTokenC = (*C.dpiAccessToken)(mem)
+	accessTokenC.token = C.CString(token)
+	accessTokenC.tokenLength = C.uint32_t(len(token))
+	accessTokenC.privateKey = C.CString(privateKey)
+	accessTokenC.privateKeyLength = C.uint32_t(len(privateKey))
+	return accessTokenC
+}
+
 // createPool creates an ODPI-C pool with the specified parameters.
 //
 // This is done while holding the mutex in order to ensure that
@@ -745,8 +797,12 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 
 	// set up common creation parameters
 	var commonCreateParams C.dpiCommonCreateParams
-	if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize, P.Charset); err != nil {
+	var cAccessToken *C.dpiAccessToken
+	if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize, P.Charset, P.Token, P.PrivateKey, cAccessToken); err != nil {
 		return nil, err
+	}
+	if P.Token != "" {
+		commonCreateParams.accessToken = cAccessToken
 	}
 
 	// initialize ODPI-C structure for pool creation parameters
@@ -805,6 +861,12 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	// if specifically reqeuested or if external authentication is desirable
 	if poolCreateParams.externalAuth == 1 || P.Heterogeneous {
 		poolCreateParams.homogeneous = 0
+	}
+
+	// assign tokencallback function
+	poolCreateParams.accessTokenCallback = C.uint32_t(dsn.DefaultMaxLifeTime / time.Second)
+	if P.MaxLifeTime > 0 {
+		poolCreateParams.maxLifetimeSession = C.uint32_t(P.MaxLifeTime / time.Second)
 	}
 
 	// setup credentials
