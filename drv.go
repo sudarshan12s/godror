@@ -72,6 +72,7 @@ package godror
 
 #include "dpi.c"
 
+void TokenCallbackHandlerDebug(void* context, dpiAccessToken *token);
 */
 import "C"
 
@@ -83,6 +84,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"runtime"
 	"strconv"
@@ -775,18 +777,39 @@ func (d *drv) getPool(P commonAndPoolParams) (*connPool, error) {
 	return pool, nil
 }
 
-//export goCallbackHandler
-func tokenCallbackHandler(context *C.void) *C.dpiAccessToken {
-	token := "abc"
-	privateKey := "xyz"
-	var accessTokenC *C.dpiAccessToken
-	mem := C.malloc(C.sizeof_dpiAccessToken)
-	accessTokenC = (*C.dpiAccessToken)(mem)
+// AccessToken Callback information.
+type AccesTokenCB struct {
+	//pool     *connPool
+	callback func(*dsn.AccesToken)
+	ID       uint64
+}
+
+// Cannot pass *AccesTokenCB to C, so pass an uint64 that points to this map entry
+var (
+	accessTokenMu sync.Mutex
+	accessTokens  = make(map[uint64]*AccesTokenCB)
+	accessTokenID uint64
+)
+
+// tokenCallbackHandler is the callback for C code on token expiry.
+//
+//export TokenCallbackHandler
+func TokenCallbackHandler(ctx unsafe.Pointer, accessTokenC *C.dpiAccessToken) {
+	log.Printf("CB %p %+v", ctx, accessTokenC)
+	accessTokenMu.Lock()
+	acessTokenCB := accessTokens[*((*uint64)(ctx))]
+	accessTokenMu.Unlock()
+
+	// Call user function which provides the token and privateKey.
+	var at dsn.AccesToken
+	acessTokenCB.callback(&at)
+
+	token := at.Token
+	privateKey := at.PrivateKey
 	accessTokenC.token = C.CString(token)
 	accessTokenC.tokenLength = C.uint32_t(len(token))
 	accessTokenC.privateKey = C.CString(privateKey)
 	accessTokenC.privateKeyLength = C.uint32_t(len(privateKey))
-	return accessTokenC
 }
 
 // createPool creates an ODPI-C pool with the specified parameters.
@@ -801,6 +824,19 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize, P.Charset, P.Token, P.PrivateKey, cAccessToken); err != nil {
 		return nil, err
 	}
+
+	defer func() {
+		if cAccessToken != nil {
+			if cAccessToken.token != nil {
+				C.free(unsafe.Pointer(cAccessToken.token))
+			}
+			if cAccessToken.privateKey != nil {
+				C.free(unsafe.Pointer(cAccessToken.privateKey))
+			}
+			C.free(unsafe.Pointer(cAccessToken))
+		}
+	}()
+
 	if P.Token != "" {
 		commonCreateParams.accessToken = cAccessToken
 	}
@@ -863,10 +899,20 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 		poolCreateParams.homogeneous = 0
 	}
 
-	// assign tokencallback function
-	poolCreateParams.accessTokenCallback = C.uint32_t(dsn.DefaultMaxLifeTime / time.Second)
-	if P.MaxLifeTime > 0 {
-		poolCreateParams.maxLifetimeSession = C.uint32_t(P.MaxLifeTime / time.Second)
+	if P.TokenCB != nil {
+		//typedef int (*dpiAccessTokenCallback)(void *context,
+		//    dpiAccessToken *accessToken);
+		poolCreateParams.accessTokenCallback = C.dpiAccessTokenCallback(C.TokenCallbackHandlerDebug)
+		// cannot pass &token to C, so pass indirectly
+		aToken := AccesTokenCB{callback: P.TokenCB}
+		accessTokenMu.Lock()
+		accessTokenID++
+		aToken.ID = accessTokenID
+		accessTokens[aToken.ID] = &aToken
+		accessTokenMu.Unlock()
+		tokenID := (*C.uint64_t)(C.malloc(8))
+		*tokenID = C.uint64_t(accessTokenID)
+		poolCreateParams.accessTokenCallbackContext = unsafe.Pointer(tokenID)
 	}
 
 	// setup credentials

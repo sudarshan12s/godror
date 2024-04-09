@@ -183,6 +183,12 @@ func (P ConnParams) String() string {
 	return q.String()
 }
 
+// AccessToken Data for Token Authentication.
+type AccesToken struct {
+	Token      string
+	PrivateKey string
+}
+
 // PoolParams holds the configuration of the Oracle Session Pool.
 //
 // For details, see https://oracle.github.io/odpi/doc/structs/dpiPoolCreateParams.html#dpipoolcreateparams
@@ -194,6 +200,7 @@ type PoolParams struct {
 	WaitTimeout, MaxLifeTime, SessionTimeout   time.Duration
 	PingInterval                               time.Duration
 	Heterogeneous, ExternalAuth                bool
+	TokenCB                                    func(*AccesToken)
 }
 
 // String returns the string representation of PoolParams.
