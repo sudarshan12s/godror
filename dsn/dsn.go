@@ -43,8 +43,10 @@ const (
 	DefaultWaitTimeout = 30 * time.Second
 	// DefaultMaxLifeTime is the maximum time in seconds till a pooled session may exist
 	DefaultMaxLifeTime = 1 * time.Hour
-	//DefaultStandaloneConnection holds the default for standaloneConnection.
+	// DefaultStandaloneConnection holds the default for standaloneConnection.
 	DefaultStandaloneConnection = false
+	// DefaultNoBreakOnContextCancel holds the default for noBreakOnContext
+	DefaultNoBreakOnContextCancel = false
 )
 
 type CommonSimpleParams struct {
@@ -59,6 +61,7 @@ type CommonSimpleParams struct {
 	// true: OnInit will be called only by the new session / false: OnInit will called by new or pooled connection
 	InitOnNewConn                               bool
 	EnableEvents, NoTZCheck, PerSessionTimezone bool
+	NoBreakOnContextCancel                      bool
 }
 
 // CommonParams holds the common parameters for pooled or standalone connections.
@@ -120,7 +123,7 @@ func (P CommonSimpleParams) String() string {
 		q.Add("noTimezoneCheck", "1")
 	}
 	if P.PerSessionTimezone {
-		q.Add("perSessionTiemzone", "1")
+		q.Add("perSessionTimezone", "1")
 	}
 	if P.StmtCacheSize != 0 {
 		q.Add("stmtCacheSize", strconv.Itoa(int(P.StmtCacheSize)))
@@ -131,11 +134,15 @@ func (P CommonSimpleParams) String() string {
 	if P.InitOnNewConn {
 		q.Add("initOnNewConnection", "1")
 	}
+
 	if P.Token != "" {
 		q.Add("token", P.Token)
 	}
 	if P.PrivateKey != "" {
 		q.Add("privateKey", P.PrivateKey)
+
+	if P.NoBreakOnContextCancel {
+		q.Add("noBreakOnContextCancel", "1")
 	}
 
 	s = q.String()
@@ -360,6 +367,7 @@ func (P ConnectionParams) string(class, withPassword bool) string {
 		q.Add("alterSession", strings.TrimSpace(as.String()))
 	}
 	q.Add("initOnNewConnection", B(P.InitOnNewConn))
+	q.Add("noBreakOnContextCancel", B(P.NoBreakOnContextCancel))
 	q.Values["onInit"] = P.OnInitStmts
 	q.Add("configDir", P.ConfigDir)
 	q.Add("libDir", P.LibDir)
@@ -503,6 +511,7 @@ func Parse(dataSourceName string) (ConnectionParams, error) {
 		{&P.NoTZCheck, "noTimezoneCheck"},
 		{&P.PerSessionTimezone, "perSessionTimezone"},
 		{&P.InitOnNewConn, "initOnNewConnection"},
+		{&P.NoBreakOnContextCancel, "noBreakOnContextCancel"},
 	} {
 		s := q.Get(task.Key)
 		if s == "" {
