@@ -83,6 +83,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+    "github.com/godror/godror/slog"
 	"io"
 	"math"
 	"runtime"
@@ -92,8 +93,6 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
-
-	"github.com/godror/godror/slog"
 
 	"github.com/godror/godror/dsn"
 )
@@ -515,7 +514,6 @@ func (d *drv) acquireConn(pool *connPool, P commonAndConnParams) (*C.dpiConn, bo
 		}
 		commonCreateParamsPtr = &commonCreateParams
 	}
-
 	// manage strings
 	var cUsername, cPassword, cNewPassword, cConnectString, cConnClass *C.char
 	defer func() {
@@ -856,7 +854,8 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	// assign external authentication flag
 	poolCreateParams.externalAuth = C.int(b2i(P.ExternalAuth))
 
-	// If its not an Token Authentication, assign homogeneous pool flag;
+	// If it is not an Token Authentication,
+    // assign homogeneous pool flag
 	// default is true so need to clear the flag
 	// if specifically reqeuested or if external authentication is desirable
 	if P.Token == "" {

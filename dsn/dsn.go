@@ -134,13 +134,12 @@ func (P CommonSimpleParams) String() string {
 	if P.InitOnNewConn {
 		q.Add("initOnNewConnection", "1")
 	}
-
 	if P.Token != "" {
 		q.Add("token", P.Token)
 	}
 	if P.PrivateKey != "" {
 		q.Add("privateKey", P.PrivateKey)
-
+	}
 	if P.NoBreakOnContextCancel {
 		q.Add("noBreakOnContextCancel", "1")
 	}
@@ -352,7 +351,6 @@ func (P ConnectionParams) string(class, withPassword bool) string {
 	q.Add("poolSessionMaxLifetime", P.MaxLifeTime.String())
 	q.Add("poolSessionTimeout", P.SessionTimeout.String())
 	q.Add("pingInterval", P.PingInterval.String())
-
 	if P.Token != "" {
 		q.Add("token", P.Token)
 	}
