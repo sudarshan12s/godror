@@ -23,16 +23,16 @@ import (
 )
 
 // AccessToken Callback information.
-type AccesTokenCB struct {
+type AccessTokenCB struct {
 	//pool     *connPool
-	callback func(*dsn.AccesToken)
+	callback func(*dsn.AccessToken)
 	ID       uint64
 }
 
-// Cannot pass *AccesTokenCB to C, so pass an uint64 that points to this map entry
+// Cannot pass *AccessTokenCB to C, so pass an uint64 that points to this map entry
 var (
 	accessTokenMu sync.Mutex
-	accessTokens  = make(map[uint64]*AccesTokenCB)
+	accessTokens  = make(map[uint64]*AccessTokenCB)
 	accessTokenID uint64
 )
 
@@ -45,12 +45,13 @@ func TokenCallbackHandler(ctx unsafe.Pointer, accessTokenC *C.dpiAccessToken) {
 	acessTokenCB := accessTokens[*((*uint64)(ctx))]
 	accessTokenMu.Unlock()
 
-	// Call user function which provides the token and privateKey.
-	var at dsn.AccesToken
-	acessTokenCB.callback(&at)
+	// Call user function which provides the new token and privateKey.
+	var refreshAccessToken dsn.AccessToken
+	acessTokenCB.callback(&refreshAccessToken)
 
-	token := at.Token
-	privateKey := at.PrivateKey
+	token := refreshAccessToken.Token
+	privateKey := refreshAccessToken.PrivateKey
+	// TBD free these strings.
 	accessTokenC.token = C.CString(token)
 	accessTokenC.tokenLength = C.uint32_t(len(token))
 	accessTokenC.privateKey = C.CString(privateKey)
@@ -60,14 +61,14 @@ func TokenCallbackHandler(ctx unsafe.Pointer, accessTokenC *C.dpiAccessToken) {
 // RegisterTokenCallback.
 //
 // This code is EXPERIMENTAL yet!
-func RegisterTokenCallback(poolCreateParams C.dpiPoolCreateParams,
-	token func(*dsn.AccesToken)) {
+func RegisterTokenCallback(poolCreateParams *C.dpiPoolCreateParams,
+	token func(*dsn.AccessToken)) {
 
 	// typedef int (*dpiAccessTokenCallback)(void* context, dpiAccessToken *accessToken);
 	poolCreateParams.accessTokenCallback = C.dpiAccessTokenCallback(C.TokenCallbackHandlerDebug)
 
 	// cannot pass &token to C, so pass indirectly
-	aToken := AccesTokenCB{callback: token}
+	aToken := AccessTokenCB{callback: token}
 	accessTokenMu.Lock()
 	accessTokenID++
 	aToken.ID = accessTokenID

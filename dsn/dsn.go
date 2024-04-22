@@ -184,7 +184,7 @@ func (P ConnParams) String() string {
 }
 
 // AccessToken Data for Token Authentication.
-type AccesToken struct {
+type AccessToken struct {
 	Token      string
 	PrivateKey string
 }
@@ -200,7 +200,7 @@ type PoolParams struct {
 	WaitTimeout, MaxLifeTime, SessionTimeout   time.Duration
 	PingInterval                               time.Duration
 	Heterogeneous, ExternalAuth                bool
-	TokenCB                                    func(*AccesToken)
+	TokenCB                                    func(*AccessToken)
 }
 
 // String returns the string representation of PoolParams.
