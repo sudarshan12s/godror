@@ -149,6 +149,10 @@ func (P CommonSimpleParams) String() string {
 	if P.PrivateKey != "" {
 		q.Add("privateKey", P.PrivateKey)
 	}
+	if P.NoBreakOnContextCancel {
+		q.Add("noBreakOnContextCancel", "1")
+>>>>>>> ef86eaa (- minor changes)
+	}
 
 	s = q.String()
 	cacheCPSMu.Lock()
