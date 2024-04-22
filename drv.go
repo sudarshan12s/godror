@@ -83,7 +83,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-    "github.com/godror/godror/slog"
+	"github.com/godror/godror/slog"
 	"io"
 	"math"
 	"runtime"
