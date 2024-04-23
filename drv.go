@@ -855,7 +855,7 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	poolCreateParams.externalAuth = C.int(b2i(P.ExternalAuth))
 
 	// If it is not an Token Authentication,
-    // assign homogeneous pool flag
+	// assign homogeneous pool flag
 	// default is true so need to clear the flag
 	// if specifically reqeuested or if external authentication is desirable
 	if P.Token == "" {
@@ -867,7 +867,7 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	if P.TokenCB != nil {
 		//typedef int (*dpiAccessTokenCallback)(void *context,
 		//    dpiAccessToken *accessToken);
-		RegisterTokenCallback(&poolCreateParams, P.TokenCB)
+		RegisterTokenCallback(&poolCreateParams, P.TokenCB, P.TokenCBCtx)
 	}
 
 	// setup credentials

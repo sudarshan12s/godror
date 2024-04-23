@@ -16,6 +16,7 @@ int TokenCallbackHandlerDebug(void* context, dpiAccessToken *token);
 import "C"
 
 import (
+	"context"
 	"github.com/godror/godror/dsn"
 	"log"
 	"sync"
@@ -24,8 +25,8 @@ import (
 
 // AccessToken Callback information.
 type AccessTokenCB struct {
-	//pool     *connPool
-	callback func(*dsn.AccessToken)
+	ctx      context.Context
+	callback func(context.Context, *dsn.AccessToken) error
 	ID       uint64
 }
 
@@ -47,7 +48,9 @@ func TokenCallbackHandler(ctx unsafe.Pointer, accessTokenC *C.dpiAccessToken) {
 
 	// Call user function which provides the new token and privateKey.
 	var refreshAccessToken dsn.AccessToken
-	acessTokenCB.callback(&refreshAccessToken)
+	if err := acessTokenCB.callback(acessTokenCB.ctx, &refreshAccessToken); err != nil {
+		log.Printf("Token Generation Failed CB %p %+v", ctx, acessTokenCB)
+	}
 
 	token := refreshAccessToken.Token
 	privateKey := refreshAccessToken.PrivateKey
@@ -62,13 +65,14 @@ func TokenCallbackHandler(ctx unsafe.Pointer, accessTokenC *C.dpiAccessToken) {
 //
 // This code is EXPERIMENTAL yet!
 func RegisterTokenCallback(poolCreateParams *C.dpiPoolCreateParams,
-	token func(*dsn.AccessToken)) {
+	tokenGenFn func(context.Context, *dsn.AccessToken) error,
+	tokenCtx context.Context) {
 
 	// typedef int (*dpiAccessTokenCallback)(void* context, dpiAccessToken *accessToken);
 	poolCreateParams.accessTokenCallback = C.dpiAccessTokenCallback(C.TokenCallbackHandlerDebug)
 
 	// cannot pass &token to C, so pass indirectly
-	aToken := AccessTokenCB{callback: token}
+	aToken := AccessTokenCB{callback: tokenGenFn, ctx: tokenCtx}
 	accessTokenMu.Lock()
 	accessTokenID++
 	aToken.ID = accessTokenID

@@ -206,7 +206,8 @@ type PoolParams struct {
 	WaitTimeout, MaxLifeTime, SessionTimeout   time.Duration
 	PingInterval                               time.Duration
 	Heterogeneous, ExternalAuth                bool
-	TokenCB                                    func(*AccessToken)
+	TokenCB                                    func(context.Context, *AccessToken) error
+	TokenCBCtx								   context.Context
 }
 
 // String returns the string representation of PoolParams.
