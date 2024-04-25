@@ -8,8 +8,8 @@ package godror_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -28,18 +28,22 @@ func TestTokenAuthCallBack(t *testing.T) {
 	}
 
 	// Reset user and passwd
-	P.Username = nil
+	P.Username = ""
 	P.Password.Reset()
-	P.homeogeneous = true
-	tokenCtx := context.WithValue(context.Background(), "host", "test.clouddb.com")
+	const hostName = "test.clouddb.com"
+	const pno = 443
+	tokenCtx := context.WithValue(context.Background(), "host", hostName)
+	tokenCtx = context.WithValue(tokenCtx, "port", pno)
 	cb := func(ctx context.Context, tok *dsn.AccessToken) error {
-		fmt.Println("inside token expiry calback")
-		fmt.Println(" context passed ", ctx.Value("foo"))
+
+		if !strings.EqualFold(ctx.Value("host"), hostName) {
+			t.Errorf("TestTokenAuthCallBack: hostName got %s, wanted %s", ctx.Value("host"), hostName)
+		}
 		newtoken := os.Getenv("GODROR_TEST_NEWTOKEN")
 		newpvtkey := os.Getenv("GODROR_TEST_NEWPVTKEY")
 		tok.Token = newtoken
 		tok.PrivateKey = newpvtkey
-		fmt.Println(tok)
+		t.Log(" Token Passed in Callback", tok)
 		return nil
 	}
 
@@ -51,14 +55,14 @@ func TestTokenAuthCallBack(t *testing.T) {
 		MaxLifeTime:    5 * time.Minute,
 		SessionTimeout: 1 * time.Minute,
 		TokenCB:        cb,
-		TokenCBCtx:     ctx,
+		TokenCBCtx:     tokenCtx,
 	}
 	P.ExternalAuth = true
 	db := sql.OpenDB(godror.NewConnector(P))
 	defer db.Close()
 
 	// create OCI SessionPool
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		fmt.Println(" ping failed  ")
 		//log.Fatal(err)
 	}
@@ -74,20 +78,27 @@ func TestTokenAuthStandAlone(t *testing.T) {
 	}
 
 	// Reset user , password
-	P.Username = nil
+	P.Username = ""
 	P.Password.Reset()
-	P.homeogeneous = true
 
-	P.Token = os.Getenv("GODROR_TEST_TOKEN")
-	P.PrivateKey = os.Getenv("GODROR_TEST_PVTKEY")
+	P.Token = os.Getenv("GODROR_TEST_NEWTOKEN")
+	P.PrivateKey = os.Getenv("GODROR_TEST_NEWPVTKEY")
 	P.StandaloneConnection = true
 	P.ExternalAuth = true
-	db := sql.Open("godror", P.string())
+	//  t.Log("`" + P.StringWithPassword() + "`")
+	db := sql.OpenDB(godror.NewConnector(P))
 	defer db.Close()
-
+	/*db, err := sql.Open("godror", "`" + P.StringWithPassword() + "`")
+		if err != nil {
+			t.Fatal(err)
+	    // TBD check for token expiry
+	    //ORA-25708:
+		}
+		defer db.Close()
+	*/
 	// create OCI SessionPool
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		fmt.Println(" ping failed  ")
-		//log.Fatal(err)
+		t.Fatal(err)
 	}
 }
