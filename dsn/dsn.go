@@ -142,6 +142,12 @@ func (P CommonSimpleParams) String() string {
 	}
 	if P.NoBreakOnContextCancel {
 		q.Add("noBreakOnContextCancel", "1")
+    }
+	if P.Token != "" {
+		q.Add("token", P.Token)
+	}
+	if P.PrivateKey != "" {
+		q.Add("privateKey", P.PrivateKey)
 	}
 
 	s = q.String()
