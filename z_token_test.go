@@ -36,7 +36,7 @@ func TestTokenAuthCallBack(t *testing.T) {
 	tokenCtx = context.WithValue(tokenCtx, "port", pno)
 	cb := func(ctx context.Context, tok *dsn.AccessToken) error {
 
-		if !strings.EqualFold(ctx.Value("host"), hostName) {
+		if !strings.EqualFold(ctx.Value("host").(string), hostName) {
 			t.Errorf("TestTokenAuthCallBack: hostName got %s, wanted %s", ctx.Value("host"), hostName)
 		}
 		newtoken := os.Getenv("GODROR_TEST_NEWTOKEN")
@@ -63,8 +63,7 @@ func TestTokenAuthCallBack(t *testing.T) {
 
 	// create OCI SessionPool
 	if err := db.PingContext(ctx); err != nil {
-		fmt.Println(" ping failed  ")
-		//log.Fatal(err)
+		t.Fatal(err)
 	}
 }
 
@@ -72,7 +71,8 @@ func TestTokenAuthStandAlone(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(testContext("TokenAuthStandAlone"), 30*time.Second)
 	defer cancel()
-	P, err := godror.ParseConnString(testConStr)
+	fmt.Println(" testcon str ", testConStr)
+	P, err := godror.ParseDSN(testConStr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,20 +85,20 @@ func TestTokenAuthStandAlone(t *testing.T) {
 	P.PrivateKey = os.Getenv("GODROR_TEST_NEWPVTKEY")
 	P.StandaloneConnection = true
 	P.ExternalAuth = true
-	//  t.Log("`" + P.StringWithPassword() + "`")
-	db := sql.OpenDB(godror.NewConnector(P))
+	t.Log("`" + P.StringWithPassword() + "`")
+	db, err := sql.Open("godror", P.StringWithPassword())
+	if err != nil {
+		t.Fatal(err)
+		// TBD check for token expiry
+		//ORA-25708:
+	}
 	defer db.Close()
-	/*db, err := sql.Open("godror", "`" + P.StringWithPassword() + "`")
-		if err != nil {
-			t.Fatal(err)
-	    // TBD check for token expiry
-	    //ORA-25708:
-		}
-		defer db.Close()
-	*/
+
 	// create OCI SessionPool
 	if err := db.PingContext(ctx); err != nil {
 		fmt.Println(" ping failed  ")
 		t.Fatal(err)
+	} else {
+		fmt.Println(" ping passed ")
 	}
 }
