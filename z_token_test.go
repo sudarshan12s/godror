@@ -18,6 +18,15 @@ import (
 	"github.com/godror/godror/dsn"
 )
 
+func isTokenEnvConfigred(t *testing.T) {
+	if os.Getenv("GODROR_TEST_EXPIRED_TOKEN") == nil ||
+		os.Getenv("GODROR_TEST_EXPIRED_PVTKEY") == nil ||
+		os.Getenv("GODROR_TEST_NEWPVTKEY") == nil ||
+		os.Getenv("GODROR_TEST_NEWTOKEN") == nil {
+		t.Skip("skipping TestTokenAuthStandAlone test")
+	}
+}
+
 // - standalone=0
 //   - Creates a homogeneous pool with externalAuth = 1.
 //     An Expired token is passed during create pool, registering a callback
@@ -27,7 +36,7 @@ import (
 //     the ping.
 
 func TestTokenAuthCallBack(t *testing.T) {
-	t.Parallel()
+	isTokenEnvConfigred(t)
 	ctx, cancel := context.WithTimeout(testContext("TokenAuthCallBack"), 30*time.Second)
 	defer cancel()
 	P, err := godror.ParseConnString(testConStr)
@@ -78,7 +87,7 @@ func TestTokenAuthCallBack(t *testing.T) {
 //   - Creates a standAlone connection with externalAuth = 1, valid token data.
 
 func TestTokenAuthStandAlone(t *testing.T) {
-	t.Parallel()
+	isTokenEnvConfigred(t)
 	ctx, cancel := context.WithTimeout(testContext("TokenAuthStandAlone"), 30*time.Second)
 	defer cancel()
 	P, err := godror.ParseDSN(testConStr)
