@@ -18,6 +18,14 @@ import (
 	"github.com/godror/godror/dsn"
 )
 
+// - standalone=0
+//   - Creates a homogeneous pool with externalAuth = 1.
+//     An Expired token is passed during create pool, registering a callback
+//     which provides a refresh token.
+//     When a Ping is done, callback is called as token is expired and the provided
+//     new token key and privateKey provided in the callback are used to perform
+//     the ping.
+
 func TestTokenAuthCallBack(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(testContext("TokenAuthCallBack"), 30*time.Second)
@@ -47,8 +55,8 @@ func TestTokenAuthCallBack(t *testing.T) {
 		return nil
 	}
 
-	P.Token = os.Getenv("GODROR_TEST_TOKEN")
-	P.PrivateKey = os.Getenv("GODROR_TEST_PVTKEY")
+	P.Token = os.Getenv("GODROR_TEST_EXPIRED_TOKEN")
+	P.PrivateKey = os.Getenv("GODROR_TEST_EXPIRED_PVTKEY")
 	P.PoolParams = godror.PoolParams{
 		MinSessions: 0, MaxSessions: 10, SessionIncrement: 1,
 		WaitTimeout:    5 * time.Second,
@@ -61,11 +69,13 @@ func TestTokenAuthCallBack(t *testing.T) {
 	db := sql.OpenDB(godror.NewConnector(P))
 	defer db.Close()
 
-	// create OCI SessionPool
 	if err := db.PingContext(ctx); err != nil {
 		t.Fatal(err)
 	}
 }
+
+// - standalone=1
+//   - Creates a standAlone connection with externalAuth = 1, valid token data.
 
 func TestTokenAuthStandAlone(t *testing.T) {
 	t.Parallel()
@@ -80,21 +90,33 @@ func TestTokenAuthStandAlone(t *testing.T) {
 	P.Username = ""
 	P.Password.Reset()
 
-	P.Token = os.Getenv("GODROR_TEST_NEWTOKEN")
-	P.PrivateKey = os.Getenv("GODROR_TEST_NEWPVTKEY")
+	P.Token = os.Getenv("GODROR_TEST_EXPIRED_TOKEN")
+	P.PrivateKey = os.Getenv("GODROR_TEST_EXPIRED_NEWPVTKEY")
 	P.StandaloneConnection = true
 	P.ExternalAuth = true
 	t.Log("`" + P.StringWithPassword() + "`")
-	db, err := sql.Open("godror", P.StringWithPassword())
+	db1, err := sql.Open("godror", P.StringWithPassword())
 	if err != nil {
 		t.Fatal(err)
-		// TBD check for token expiry
-		//ORA-25708:
 	}
-	defer db.Close()
+	defer db1.Close()
+	if err := db1.PingContext(ctx); err != nil {
+		// expecting token expiry error
+		if !strings.Contains(err.Error(), "ORA-25708:") {
+			t.Fatal(err)
+		}
+	}
 
-	// create OCI SessionPool
-	if err := db.PingContext(ctx); err != nil {
+	P.Token = os.Getenv("GODROR_TEST_NEWTOKEN")
+	P.PrivateKey = os.Getenv("GODROR_TEST_NEWPVTKEY")
+	t.Log("`" + P.StringWithPassword() + "`")
+	db2, err := sql.Open("godror", P.StringWithPassword())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+
+	if err := db2.PingContext(ctx); err != nil {
 		t.Fatal(err)
 	}
 }
