@@ -47,9 +47,7 @@ func TestTokenAuthCallBack(t *testing.T) {
 	P.Username = ""
 	P.Password.Reset()
 	const hostName = "test.clouddb.com"
-	const pno = 443
 	tokenCtx := context.WithValue(context.Background(), "host", hostName)
-	tokenCtx = context.WithValue(tokenCtx, "port", pno)
 	cb := func(ctx context.Context, tok *dsn.AccessToken) error {
 
 		if !strings.EqualFold(ctx.Value("host").(string), hostName) {
@@ -83,7 +81,10 @@ func TestTokenAuthCallBack(t *testing.T) {
 }
 
 // - standalone=1
-//   - Creates a standAlone connection with externalAuth = 1, valid token data.
+//   - Creates a standAlone connection with externalAuth = 1,
+//     expired token data and tests proper error is thrown.
+//   - Creates a standAlone connection with externalAuth = 1,
+//     valid token data.
 
 func TestTokenAuthStandAlone(t *testing.T) {
 	isTokenEnvConfigred(t)
