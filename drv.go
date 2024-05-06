@@ -562,10 +562,6 @@ func (d *drv) acquireConn(pool *connPool, P commonAndConnParams) (*C.dpiConn, bo
 		connCreateParams.externalAuth = 1
 	}
 
-	if P.Token != "" {
-		connCreateParams.externalAuth = 1
-	}
-
 	// assign authorization mode
 	connCreateParams.authMode = C.dpiAuthMode(C.DPI_MODE_AUTH_DEFAULT)
 	if P.IsSysDBA {
@@ -854,12 +850,11 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	// assign external authentication flag
 	poolCreateParams.externalAuth = C.int(b2i(P.ExternalAuth))
 
-	// If it is not an Token Authentication,
-	// assign homogeneous pool flag
-	// default is true so need to clear the flag
+	// assign homogeneous pool flag; default is true so need to clear the flag
 	// if specifically reqeuested or if external authentication is desirable
-	if P.Token == "" {
-		if poolCreateParams.externalAuth == 1 || P.Heterogeneous {
+	if poolCreateParams.externalAuth == 1 || P.Heterogeneous {
+		if P.Token == "" {
+			// Token Authentication needs homogeneneous to be set
 			poolCreateParams.homogeneous = 0
 		}
 	}
