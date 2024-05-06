@@ -8,7 +8,6 @@ package godror_test
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -19,10 +18,10 @@ import (
 )
 
 func isTokenEnvConfigred(t *testing.T) {
-	if os.Getenv("GODROR_TEST_EXPIRED_TOKEN") == nil ||
-		os.Getenv("GODROR_TEST_EXPIRED_PVTKEY") == nil ||
-		os.Getenv("GODROR_TEST_NEWPVTKEY") == nil ||
-		os.Getenv("GODROR_TEST_NEWTOKEN") == nil {
+	if os.Getenv("GODROR_TEST_EXPIRED_TOKEN") == "" ||
+		os.Getenv("GODROR_TEST_EXPIRED_PVTKEY") == "" ||
+		os.Getenv("GODROR_TEST_NEWPVTKEY") == ""||
+		os.Getenv("GODROR_TEST_NEWTOKEN") == "" {
 		t.Skip("skipping TestTokenAuthStandAlone test")
 	}
 }

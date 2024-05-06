@@ -62,8 +62,6 @@ func TokenCallbackHandler(ctx unsafe.Pointer, accessTokenC *C.dpiAccessToken) {
 }
 
 // RegisterTokenCallback.
-//
-// This code is EXPERIMENTAL yet!
 func RegisterTokenCallback(poolCreateParams *C.dpiPoolCreateParams,
 	tokenGenFn func(context.Context, *dsn.AccessToken) error,
 	tokenCtx context.Context) {
