@@ -336,7 +336,9 @@ var cUTF8, cDriverName = C.CString("UTF-8"), C.CString(DriverName)
 // initCommonCreateParams initializes ODPI-C common creation parameters used for creating pools and
 // standalone connections. The C strings for the encoding and driver name are
 // defined at the package level for convenience.
-func (d *drv) initCommonCreateParams(P *C.dpiCommonCreateParams, enableEvents bool, stmtCacheSize int, charset string) error {
+func (d *drv) initCommonCreateParams(P *C.dpiCommonCreateParams, enableEvents bool,
+	stmtCacheSize int, charset string, token string, privateKey string,
+	cAccessToken *C.dpiAccessToken) error {
 	// initialize ODPI-C structure for common creation parameters
 	if err := d.checkExec(func() C.int {
 		return C.dpiContext_initCommonCreateParams(d.dpiContext, P)
@@ -368,6 +370,17 @@ func (d *drv) initCommonCreateParams(P *C.dpiCommonCreateParams, enableEvents bo
 		} else {
 			P.stmtCacheSize = C.uint32_t(stmtCacheSize)
 		}
+	}
+
+	// Token Based Authentication.
+	if token != "" {
+		cAccessToken.token = C.CString(token)
+		cAccessToken.tokenLength = C.uint32_t(len(token))
+		if privateKey != "" {
+			cAccessToken.privateKey = C.CString(privateKey)
+			cAccessToken.privateKeyLength = C.uint32_t(len(privateKey))
+		}
+		P.accessToken = cAccessToken
 	}
 
 	return nil
@@ -476,9 +489,27 @@ func (d *drv) acquireConn(pool *connPool, P commonAndConnParams) (*C.dpiConn, bo
 	// used when a standalone connection is being created; when a connection is
 	// being acquired from the pool this structure is not needed
 	var commonCreateParamsPtr *C.dpiCommonCreateParams
+	var cAccessToken *C.dpiAccessToken
+
 	if pool == nil {
 		var commonCreateParams C.dpiCommonCreateParams
-		if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize, P.Charset); err != nil {
+		if P.Token != "" { // Token Authentication requested.
+			mem := C.malloc(C.sizeof_dpiAccessToken)
+			cAccessToken = (*C.dpiAccessToken)(mem)
+			defer func() {
+				if cAccessToken != nil {
+					if cAccessToken.token != nil {
+						C.free(unsafe.Pointer(cAccessToken.token))
+					}
+					if cAccessToken.privateKey != nil {
+						C.free(unsafe.Pointer(cAccessToken.privateKey))
+					}
+					C.free(unsafe.Pointer(cAccessToken))
+				}
+			}()
+		}
+		if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize,
+			P.Charset, P.Token, P.PrivateKey, cAccessToken); err != nil {
 			return nil, false, nil, err
 		}
 		commonCreateParamsPtr = &commonCreateParams
@@ -746,7 +777,24 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 
 	// set up common creation parameters
 	var commonCreateParams C.dpiCommonCreateParams
-	if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize, P.Charset); err != nil {
+	var cAccessToken *C.dpiAccessToken
+	if P.Token != "" { // Token Based Authentication requested.
+		mem := C.malloc(C.sizeof_dpiAccessToken)
+		cAccessToken = (*C.dpiAccessToken)(mem)
+		defer func() {
+			if cAccessToken != nil {
+				if cAccessToken.token != nil {
+					C.free(unsafe.Pointer(cAccessToken.token))
+				}
+				if cAccessToken.privateKey != nil {
+					C.free(unsafe.Pointer(cAccessToken.privateKey))
+				}
+				C.free(unsafe.Pointer(cAccessToken))
+			}
+		}()
+	}
+	if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize,
+		P.Charset, P.Token, P.PrivateKey, cAccessToken); err != nil {
 		return nil, err
 	}
 
@@ -805,7 +853,16 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	// assign homogeneous pool flag; default is true so need to clear the flag
 	// if specifically reqeuested or if external authentication is desirable
 	if poolCreateParams.externalAuth == 1 || P.Heterogeneous {
-		poolCreateParams.homogeneous = 0
+		if P.Token == "" {
+			// Token Authentication needs homogeneneous to be set
+			poolCreateParams.homogeneous = 0
+		}
+	}
+
+	if P.TokenCB != nil {
+		//typedef int (*dpiAccessTokenCallback)(void *context,
+		//    dpiAccessToken *accessToken);
+		RegisterTokenCallback(&poolCreateParams, P.TokenCB, P.TokenCBCtx)
 	}
 
 	// setup credentials
