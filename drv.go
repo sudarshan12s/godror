@@ -167,6 +167,18 @@ func ParseDSN(dataSourceName string) (P ConnectionParams, err error) {
 
 func NewPassword(s string) Password { return dsn.NewPassword(s) }
 
+func freeAccessToken(cAccessToken *C.dpiAccessToken) {
+	if cAccessToken != nil {
+		if cAccessToken.token != nil {
+			C.free(unsafe.Pointer(cAccessToken.token))
+		}
+		if cAccessToken.privateKey != nil {
+			C.free(unsafe.Pointer(cAccessToken.privateKey))
+		}
+		C.free(unsafe.Pointer(cAccessToken))
+	}
+}
+
 var defaultDrv = &drv{}
 
 func init() {
@@ -496,17 +508,7 @@ func (d *drv) acquireConn(pool *connPool, P commonAndConnParams) (*C.dpiConn, bo
 		if P.Token != "" { // Token Authentication requested.
 			mem := C.malloc(C.sizeof_dpiAccessToken)
 			cAccessToken = (*C.dpiAccessToken)(mem)
-			defer func() {
-				if cAccessToken != nil {
-					if cAccessToken.token != nil {
-						C.free(unsafe.Pointer(cAccessToken.token))
-					}
-					if cAccessToken.privateKey != nil {
-						C.free(unsafe.Pointer(cAccessToken.privateKey))
-					}
-					C.free(unsafe.Pointer(cAccessToken))
-				}
-			}()
+			defer freeAccessToken(cAccessToken)
 		}
 		if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize,
 			P.Charset, P.Token, P.PrivateKey, cAccessToken); err != nil {
@@ -781,17 +783,7 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	if P.Token != "" { // Token Based Authentication requested.
 		mem := C.malloc(C.sizeof_dpiAccessToken)
 		cAccessToken = (*C.dpiAccessToken)(mem)
-		defer func() {
-			if cAccessToken != nil {
-				if cAccessToken.token != nil {
-					C.free(unsafe.Pointer(cAccessToken.token))
-				}
-				if cAccessToken.privateKey != nil {
-					C.free(unsafe.Pointer(cAccessToken.privateKey))
-				}
-				C.free(unsafe.Pointer(cAccessToken))
-			}
-		}()
+		defer freeAccessToken(cAccessToken)
 	}
 	if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize,
 		P.Charset, P.Token, P.PrivateKey, cAccessToken); err != nil {

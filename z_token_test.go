@@ -20,7 +20,7 @@ import (
 func isTokenEnvConfigred(t *testing.T) {
 	if os.Getenv("GODROR_TEST_EXPIRED_TOKEN") == "" ||
 		os.Getenv("GODROR_TEST_EXPIRED_PVTKEY") == "" ||
-		os.Getenv("GODROR_TEST_NEWPVTKEY") == ""||
+		os.Getenv("GODROR_TEST_NEWPVTKEY") == "" ||
 		os.Getenv("GODROR_TEST_NEWTOKEN") == "" {
 		t.Skip("skipping TestTokenAuthStandAlone test")
 	}
@@ -47,11 +47,18 @@ func TestTokenAuthCallBack(t *testing.T) {
 	P.Username = ""
 	P.Password.Reset()
 	const hostName = "test.clouddb.com"
+	const pno = 443
 	tokenCtx := context.WithValue(context.Background(), "host", hostName)
+	tokenCtx = context.WithValue(tokenCtx, "port", pno)
 	cb := func(ctx context.Context, tok *dsn.AccessToken) error {
 
 		if !strings.EqualFold(ctx.Value("host").(string), hostName) {
-			t.Errorf("TestTokenAuthCallBack: hostName got %s, wanted %s", ctx.Value("host"), hostName)
+			t.Errorf("TestTokenAuthCallBack: hostName got %s, wanted %s",
+				ctx.Value("host"), hostName)
+		}
+		if pno != ctx.Value("port").(int) {
+			t.Errorf("TestTokenAuthCallBack: port got %d, wanted %d",
+				ctx.Value("port").(int), pno)
 		}
 		newtoken := os.Getenv("GODROR_TEST_NEWTOKEN")
 		newpvtkey := os.Getenv("GODROR_TEST_NEWPVTKEY")
@@ -100,7 +107,7 @@ func TestTokenAuthStandAlone(t *testing.T) {
 	P.Password.Reset()
 
 	P.Token = os.Getenv("GODROR_TEST_EXPIRED_TOKEN")
-	P.PrivateKey = os.Getenv("GODROR_TEST_EXPIRED_NEWPVTKEY")
+	P.PrivateKey = os.Getenv("GODROR_TEST_EXPIRED_PVTKEY")
 	P.StandaloneConnection = true
 	P.ExternalAuth = true
 	t.Log("`" + P.StringWithPassword() + "`")
