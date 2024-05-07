@@ -201,7 +201,7 @@ type PoolParams struct {
 	PingInterval                               time.Duration
 	Heterogeneous, ExternalAuth                bool
 	TokenCB                                    func(context.Context, *AccessToken) error
-	TokenCBCtx								   context.Context
+	TokenCBCtx                                 context.Context
 }
 
 // String returns the string representation of PoolParams.
@@ -299,6 +299,13 @@ func (P ConnectionParams) string(class, withPassword bool) string {
 	if withPassword {
 		q.Add("password", P.Password.Secret())
 		q.Add("newPassword", P.NewPassword.Secret())
+		if P.Token != "" {
+			q.Add("token", P.Token)
+		}
+		if P.PrivateKey != "" {
+			q.Add("privateKey", P.PrivateKey)
+		}
+
 	} else {
 		q.Add("password", P.Password.String())
 		if !P.NewPassword.IsZero() {
