@@ -305,7 +305,6 @@ func (P ConnectionParams) string(class, withPassword bool) string {
 		if P.PrivateKey != "" {
 			q.Add("privateKey", P.PrivateKey)
 		}
-
 	} else {
 		q.Add("password", P.Password.String())
 		if !P.NewPassword.IsZero() {
