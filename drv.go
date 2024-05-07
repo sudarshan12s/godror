@@ -846,7 +846,7 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	// if specifically reqeuested or if external authentication is desirable
 	if poolCreateParams.externalAuth == 1 || P.Heterogeneous {
 		if P.Token == "" {
-			// Token Authentication needs homogeneneous to be set
+			// Reset homogeneous only for non-token Authentication
 			poolCreateParams.homogeneous = 0
 		}
 	}
