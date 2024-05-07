@@ -30,8 +30,8 @@ func isTokenEnvConfigred(t *testing.T) {
 //   - Creates a homogeneous pool with externalAuth = 1.
 //     An Expired token is passed during create pool, registering a callback
 //     which provides a refresh token.
-//     When a Ping is done, callback is called as token is expired and the provided
-//     new token key and privateKey provided in the callback are used to perform
+//     When Ping is done, callback is called as token is expired and the
+//     provided new token key and privateKey are used to perform
 //     the ping.
 
 func TestTokenAuthCallBack(t *testing.T) {
@@ -89,9 +89,9 @@ func TestTokenAuthCallBack(t *testing.T) {
 
 // - standalone=1
 //   - Creates a standAlone connection with externalAuth = 1,
-//     expired token data and tests proper error is thrown.
+//     expired token data and check proper error is thrown.
 //   - Creates a standAlone connection with externalAuth = 1,
-//     valid token data.
+//     valid token data and check ping is successfull.
 
 func TestTokenAuthStandAlone(t *testing.T) {
 	isTokenEnvConfigred(t)
