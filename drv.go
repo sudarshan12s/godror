@@ -241,7 +241,7 @@ type locationWithOffSecs struct {
 type connPool struct {
 	dpiPool         *C.dpiPool
 	key             string
-	tokenCallBackid uint64
+	tokenCallBackID uint64
 	params          commonAndPoolParams
 }
 
@@ -250,7 +250,7 @@ func (p *connPool) Purge() {
 	dpiPool := p.dpiPool
 	p.dpiPool = nil
 	if dpiPool != nil {
-		UnRegisterTokenCallback(p.tokenCallBackid)
+		UnRegisterTokenCallback(p.tokenCallBackID)
 		C.dpiPool_close(dpiPool, C.DPI_MODE_POOL_CLOSE_FORCE)
 	}
 }
@@ -911,7 +911,7 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	}
 	C.dpiPool_setStmtCacheSize(dp, stmtCacheSize)
 
-	return &connPool{dpiPool: dp, params: P, tokenCallBackid: id}, nil
+	return &connPool{dpiPool: dp, params: P, tokenCallBackID: id}, nil
 }
 
 // PoolStats contains Oracle session pool statistics

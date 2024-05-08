@@ -98,7 +98,9 @@ func RegisterTokenCallback(poolCreateParams *C.dpiPoolCreateParams,
 // UnRegisterTokenCallback will remove the token callback data registered
 // during pool creation.
 func UnRegisterTokenCallback(key uint64) {
+	accessTokenCBsMu.Lock()
 	value, ok := accessTokenCBs[key]
+	accessTokenCBsMu.Unlock()
 	if ok {
 		if value.ctoken != nil {
 			C.free(unsafe.Pointer(value.ctoken))
