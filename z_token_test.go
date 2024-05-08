@@ -19,8 +19,6 @@ import (
 
 func isTokenEnvConfigred(t *testing.T) {
 	if os.Getenv("GODROR_TEST_EXPIRED_TOKEN") == "" ||
-		os.Getenv("GODROR_TEST_EXPIRED_PVTKEY") == "" ||
-		os.Getenv("GODROR_TEST_NEWPVTKEY") == "" ||
 		os.Getenv("GODROR_TEST_NEWTOKEN") == "" {
 		t.Skip("skipping TestTokenAuthStandAlone test")
 	}

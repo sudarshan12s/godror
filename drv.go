@@ -510,6 +510,8 @@ func (d *drv) acquireConn(pool *connPool, P commonAndConnParams) (*C.dpiConn, bo
 		if P.Token != "" { // Token Authentication requested.
 			mem := C.malloc(C.sizeof_dpiAccessToken)
 			cAccessToken = (*C.dpiAccessToken)(mem)
+			cAccessToken.token = nil
+			cAccessToken.privateKey = nil
 			defer freeAccessToken(cAccessToken)
 		}
 		if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize,
@@ -782,10 +784,12 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	// set up common creation parameters
 	var commonCreateParams C.dpiCommonCreateParams
 	var cAccessToken *C.dpiAccessToken
-	var id uint64      // Identifier for callback registered
-	if P.Token != "" { // Token Based Authentication requested.
+	var tokenCBID uint64 // Identifier for callback registered
+	if P.Token != "" {   // Token Based Authentication requested.
 		mem := C.malloc(C.sizeof_dpiAccessToken)
 		cAccessToken = (*C.dpiAccessToken)(mem)
+		cAccessToken.token = nil
+		cAccessToken.privateKey = nil
 		defer freeAccessToken(cAccessToken)
 	}
 	if err := d.initCommonCreateParams(&commonCreateParams, P.EnableEvents, P.StmtCacheSize,
@@ -857,7 +861,7 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	if P.TokenCB != nil {
 		//typedef int (*dpiAccessTokenCallback)(void *context,
 		//    dpiAccessToken *accessToken);
-		RegisterTokenCallback(&poolCreateParams, P.TokenCB, P.TokenCBCtx, &id)
+		RegisterTokenCallback(&poolCreateParams, P.TokenCB, P.TokenCBCtx, &tokenCBID)
 	}
 
 	// setup credentials
@@ -896,6 +900,9 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 			(**C.dpiPool)(unsafe.Pointer(&dp)),
 		)
 	}); err != nil {
+		if tokenCBID != 0 {
+			UnRegisterTokenCallback(tokenCBID)
+		}
 		return nil, fmt.Errorf("dpoPool_create user=%s extAuth=%v: %w",
 			P.Username, poolCreateParams.externalAuth, err)
 	}

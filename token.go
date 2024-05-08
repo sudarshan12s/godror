@@ -17,7 +17,6 @@ import "C"
 
 import (
 	"context"
-	"fmt"
 	"github.com/godror/godror/dsn"
 	"log"
 	"sync"
@@ -54,24 +53,26 @@ func TokenCallbackHandler(ctx unsafe.Pointer, accessTokenC *C.dpiAccessToken) {
 	var refreshAccessToken dsn.AccessToken
 	if err := acessTokenCB.callback(acessTokenCB.ctx, &refreshAccessToken); err != nil {
 		log.Printf("Token Generation Failed CB %p %+v", ctx, acessTokenCB)
+		return
 	}
 	if acessTokenCB.ctoken != nil {
 		C.free(unsafe.Pointer(acessTokenCB.ctoken))
-		fmt.Println("free prev token ")
 	}
 	if acessTokenCB.cprivateKey != nil {
-		fmt.Println("free prev privatekey ")
 		C.free(unsafe.Pointer(acessTokenCB.cprivateKey))
 	}
 	token := refreshAccessToken.Token
 	privateKey := refreshAccessToken.PrivateKey
-	// TBD free these strings.
-	accessTokenC.token = C.CString(token)
-	acessTokenCB.ctoken = accessTokenC.token
-	accessTokenC.tokenLength = C.uint32_t(len(token))
-	accessTokenC.privateKey = C.CString(privateKey)
-	acessTokenCB.cprivateKey = accessTokenC.privateKey
-	accessTokenC.privateKeyLength = C.uint32_t(len(privateKey))
+	if token != "" {
+		accessTokenC.token = C.CString(token)
+		acessTokenCB.ctoken = accessTokenC.token
+		accessTokenC.tokenLength = C.uint32_t(len(token))
+		if privateKey != "" {
+			accessTokenC.privateKey = C.CString(privateKey)
+			acessTokenCB.cprivateKey = accessTokenC.privateKey
+			accessTokenC.privateKeyLength = C.uint32_t(len(privateKey))
+		}
+	}
 }
 
 // RegisterTokenCallback will add an entry of callback data in a map.
@@ -104,10 +105,8 @@ func UnRegisterTokenCallback(key uint64) {
 	if ok {
 		if value.ctoken != nil {
 			C.free(unsafe.Pointer(value.ctoken))
-			fmt.Println("free prev token in unregiser ")
 		}
 		if value.cprivateKey != nil {
-			fmt.Println("free prev privatekey in unregister  ")
 			C.free(unsafe.Pointer(value.cprivateKey))
 		}
 		delete(accessTokenCBs, key)
