@@ -239,9 +239,10 @@ type locationWithOffSecs struct {
 	offSecs int
 }
 type connPool struct {
-	dpiPool *C.dpiPool
-	key     string
-	params  commonAndPoolParams
+	dpiPool         *C.dpiPool
+	key             string
+	tokenCallBackid uint64
+	params          commonAndPoolParams
 }
 
 // Purge force-closes the pool's connections then closes the pool.
@@ -249,6 +250,7 @@ func (p *connPool) Purge() {
 	dpiPool := p.dpiPool
 	p.dpiPool = nil
 	if dpiPool != nil {
+		UnRegisterTokenCallback(p.tokenCallBackid)
 		C.dpiPool_close(dpiPool, C.DPI_MODE_POOL_CLOSE_FORCE)
 	}
 }
@@ -780,6 +782,7 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	// set up common creation parameters
 	var commonCreateParams C.dpiCommonCreateParams
 	var cAccessToken *C.dpiAccessToken
+	var id uint64      // Identifier for callback registered
 	if P.Token != "" { // Token Based Authentication requested.
 		mem := C.malloc(C.sizeof_dpiAccessToken)
 		cAccessToken = (*C.dpiAccessToken)(mem)
@@ -854,7 +857,7 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	if P.TokenCB != nil {
 		//typedef int (*dpiAccessTokenCallback)(void *context,
 		//    dpiAccessToken *accessToken);
-		RegisterTokenCallback(&poolCreateParams, P.TokenCB, P.TokenCBCtx)
+		RegisterTokenCallback(&poolCreateParams, P.TokenCB, P.TokenCBCtx, &id)
 	}
 
 	// setup credentials
@@ -908,7 +911,7 @@ func (d *drv) createPool(P commonAndPoolParams) (*connPool, error) {
 	}
 	C.dpiPool_setStmtCacheSize(dp, stmtCacheSize)
 
-	return &connPool{dpiPool: dp, params: P}, nil
+	return &connPool{dpiPool: dp, params: P, tokenCallBackid: id}, nil
 }
 
 // PoolStats contains Oracle session pool statistics
