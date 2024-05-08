@@ -79,7 +79,6 @@ func TokenCallbackHandler(ctx unsafe.Pointer, accessTokenC *C.dpiAccessToken) {
 func RegisterTokenCallback(poolCreateParams *C.dpiPoolCreateParams,
 	tokenGenFn func(context.Context, *dsn.AccessToken) error,
 	tokenCtx context.Context, id *uint64) {
-
 	// typedef int (*dpiAccessTokenCallback)(void* context, dpiAccessToken *accessToken);
 	poolCreateParams.accessTokenCallback = C.dpiAccessTokenCallback(C.TokenCallbackHandlerDebug)
 

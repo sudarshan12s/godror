@@ -17,6 +17,8 @@ import (
 	"github.com/godror/godror/dsn"
 )
 
+// Checks if Token is configured. PrivateKey is only for IAM, hence
+// not verified.
 func isTokenEnvConfigred(t *testing.T) {
 	if os.Getenv("GODROR_TEST_EXPIRED_TOKEN") == "" ||
 		os.Getenv("GODROR_TEST_NEWTOKEN") == "" {
