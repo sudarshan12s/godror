@@ -91,8 +91,8 @@ func (v Vector) String() string {
 	return fmt.Sprintf("DenseVector(values: %s, dims: %d, type: %s)", valueStr, v.dims, v.typ)
 }
 
-// GetVectorInfo converts a Go `HybridVector` into a `dpiVectorInfo` C struct
-func GetVectorInfo(hv HybridVector) C.dpiVectorInfo {
+// GetVectorInfo converts a Go `Vector` into a `dpiVectorInfo` C struct
+func GetVectorInfo(hv Vector) C.dpiVectorInfo {
 	var format C.uint8_t
 	var dimBuffer C.dpiVectorDimensionBuffer
 	var dimensionSize C.uint8_t
