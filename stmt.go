@@ -1368,6 +1368,13 @@ func (st *statement) bindVarTypeSwitch(ctx context.Context, info *argInfo, get *
 			*get = st.conn.dataGetJSONValue
 		}
 
+	case Vector, []Vector:
+		info.typ, info.natTyp = C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR
+		info.set = st.conn.dataSetVectorValue
+		if info.isOut {
+			*get = st.conn.dataGetVectorValue
+		}
+
 	default:
 		if logger != nil && logger.Enabled(ctx, slog.LevelDebug) {
 			logger.Debug("bindVarTypeSwitch default", "value", fmt.Sprintf("%T", value))
@@ -3571,6 +3578,64 @@ func (c *conn) dataGetJSONString(ctx context.Context, v interface{}, data []C.dp
 		return fmt.Errorf("dataGetJSONString not implemented for type %T", out)
 	}
 	return nil
+}
+
+func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dpiData, vv interface{}) error {
+	var err error = nil
+	if len(data) == 0 {
+		return nil
+	}
+	if vv == nil {
+		return dataSetNull(ctx, dv, data, nil)
+	}
+	switch x := vv.(type) {
+	case Vector:
+		switch reflect.TypeOf(vv.values).Kind() {
+		case reflect.Slice:
+			elemType := reflect.TypeOf(vv.values).Elem().Kind()
+			switch elemType {
+			case reflect.Float32:
+				typ = "float32"
+				if err = c.checkExec(func() C.int { return C.dpiVector_setValue(GetVectorInfo(&(data[0])), dpijsonnode) }); err != nil {
+					return fmt.Errorf("dataSetVectorValue %w", err)
+				}
+			case reflect.Float64:
+				typ = "float64"
+			case reflect.Int8:
+				typ = "int8"
+			default:
+				typ = fmt.Sprintf("unknown: %v", elemType)
+			}
+		default:
+			typ = "not a slice"
+		}
+	case []Vector:
+		for i := range x {
+			data[i].isNull = 0
+			switch reflect.TypeOf(x[i].values).Kind() {
+			case reflect.Slice:
+				elemType := reflect.TypeOf(x[i].values).Elem().Kind()
+				switch elemType {
+				case reflect.Float32:
+					typ = "float32"
+					if err = c.checkExec(func() C.int { return C.dpiVector_setValue(GetVectorInfo(&(data[0])), dpijsonnode) }); err != nil {
+						return fmt.Errorf("dataSetVectorValue %w", err)
+					}
+				case reflect.Float64:
+					typ = "float64"
+				case reflect.Int8:
+					typ = "int8"
+				default:
+					typ = fmt.Sprintf("unknown: %v", elemType)
+				}
+			default:
+				typ = "not a slice"
+			}
+		}
+	default:
+		return fmt.Errorf("dataSetVectorValue not implemented for type %T", x)
+	}
+	return err
 }
 
 var (
