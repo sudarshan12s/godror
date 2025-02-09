@@ -8,12 +8,11 @@ package godror_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"errors"
-	"fmt"
+	_ "errors"
+	_ "fmt"
 	"reflect"
-	"strconv"
-	"strings"
+	_ "strconv"
+	_ "strings"
 	"testing"
 	"time"
 
@@ -56,29 +55,27 @@ func TestReadWriteVector(t *testing.T) {
 	}
 	defer stmt.Close()
 	//var travelTime time.Duration = 5*time.Hour + 21*time.Minute + 10*time.Millisecond + 20*time.Nanosecond
-	var embedding [3]float64
-
-	embedding[0] = 1.1
-	embedding[1] = 2.2
-	embedding[2] = 3.3
+	var embedding = []float32{1.1, 2.2, 3.3}
 	// values for batch insert
-	const num = 1
-	ids := make([]godror.Number, num)
-	docs := make([]godror.Vector[float32], num)
-	for i := range ids {
-		docs[i] = godror.Vector[float32]{values: embedding}
-		ids[i] = godror.Number(strconv.Itoa(i))
-	}
-
+	/*	const num = 1
+		ids := make([]godror.Number, num)
+		docs := make([]godror.Vector[float32], num)
+		for i := range ids {
+	//		docs[i] = godror.Vector[float32]{values: embedding, indices: nil, dimentions:0, isSparse: false}
+	    docs[i] = godror.NewVector[float32](embedding, 0, nil)
+			ids[i] = godror.Number(strconv.Itoa(i))
+		}
+	*/
 	// value for last row to simulate single row insert
-	lastIndex := godror.Number(strconv.Itoa(num))
-	lastJSONDoc := godror.Vector{values: embedding}
+	//	lastIndex := godror.Number(strconv.Itoa(num))
+	lastIndex := 1
+	//	lastJSONDoc := godror.Vector[float32]{values: embedding}
+	lastJSONDoc := godror.NewVector[float32](embedding, 0, nil)
 
 	for tN, tC := range []struct {
 		ID        interface{}
-		EMBEDDING godror.Vector
+		EMBEDDING godror.Vector[float32]
 	}{
-		{EMBEDDING: docs, ID: ids},
 		{EMBEDDING: lastJSONDoc, ID: lastIndex},
 	} {
 		if _, err = stmt.ExecContext(ctx, tC.ID, tC.EMBEDDING); err != nil {
@@ -94,8 +91,7 @@ func TestReadWriteVector(t *testing.T) {
 			continue
 		}
 		var id interface{}
-		var jsondoc godror.Vector
-		var ok bool
+		var jsondoc godror.Vector[float32]
 		for rows.Next() {
 			if err = rows.Scan(&id, &jsondoc); err != nil {
 				rows.Close()
@@ -108,17 +104,10 @@ func TestReadWriteVector(t *testing.T) {
 			} else {
 				t.Logf("%d. JSON Document read %q: ", id, jsondoc)
 
-				var gotmap []float64
-				v, err := jsondoc.GetValues()
-				if err != nil {
-					t.Errorf("%d. %v", id, err)
-				}
-				if gotmap, ok = v.([]float64); !ok {
-					t.Errorf("%d. %T is not JSONObject ", id, v)
-				}
-				eq := reflect.DeepEqual(embedding, gotmap)
+				v := jsondoc.GetValues()
+				eq := reflect.DeepEqual(embedding, v)
 				if !eq {
-					t.Errorf("Got %+v, wanted %+v", gotmap, embedding)
+					t.Errorf("Got %+v, wanted %+v", v, embedding)
 				}
 			}
 

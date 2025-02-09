@@ -3596,13 +3596,13 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 	switch x := vv.(type) {
 	case Vector[float32]:
 		data[0].isNull = 0
-		var vecInfo *C.vectorInfo
-		err = GetVectorInfo[float32](x.values, &vecInfo)
+		var vecInfo C.dpiVectorInfo
+		err = GetVectorInfo(x, &vecInfo)
 		if err != nil {
 			return fmt.Errorf("dataSetVectorValue %w", err)
 		}
 		//defer freeVectorInfo(vecInfo)
-		if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.godror_get_Vector(&(data[0])), vecInfo) }); err != nil {
+		if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.godror_get_Vector(&(data[0])), &vecInfo) }); err != nil {
 			return fmt.Errorf("dataSetVectorValue %w", err)
 		}
 	case []Vector[float32]:
