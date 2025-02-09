@@ -57,10 +57,10 @@ func TestReadWriteVector(t *testing.T) {
 	defer stmt.Close()
 	//var travelTime time.Duration = 5*time.Hour + 21*time.Minute + 10*time.Millisecond + 20*time.Nanosecond
 	var embedding [3]float64
- 
-                embedding [0] = 1.1
-                embedding [1] = 2.2
-                embedding [2] = 3.3
+
+	embedding[0] = 1.1
+	embedding[1] = 2.2
+	embedding[2] = 3.3
 	// values for batch insert
 	const num = 1
 	ids := make([]godror.Number, num)
@@ -75,7 +75,7 @@ func TestReadWriteVector(t *testing.T) {
 	lastJSONDoc := godror.Vector{values: embedding}
 
 	for tN, tC := range []struct {
-		ID   interface{}
+		ID        interface{}
 		EMBEDDING godror.Vector
 	}{
 		{EMBEDDING: docs, ID: ids},
