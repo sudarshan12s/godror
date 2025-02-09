@@ -20,6 +20,11 @@ void godror_setFromString(dpiVar *dv, uint32_t pos, const _GoString_ value) {
 	dpiVar_setFromBytes(dv, pos, _GoStringPtr(value), length);
 }
 
+dpiVector *godror_get_Vector(dpiData *data)
+{
+    return data->value.asVector;
+}
+
 dpiAnnotation godror_getAnnotation(dpiAnnotation *annotations, int32_t idx) {
 	return annotations[idx];
 }
@@ -1368,11 +1373,11 @@ func (st *statement) bindVarTypeSwitch(ctx context.Context, info *argInfo, get *
 			*get = st.conn.dataGetJSONValue
 		}
 
-	case Vector, []Vector:
+	case Vector[float32], []Vector[float32]:
 		info.typ, info.natTyp = C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR
 		info.set = st.conn.dataSetVectorValue
 		if info.isOut {
-			*get = st.conn.dataGetVectorValue
+			//*get = st.conn.dataGetVectorValue
 		}
 
 	default:
@@ -3589,48 +3594,20 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 		return dataSetNull(ctx, dv, data, nil)
 	}
 	switch x := vv.(type) {
-	case Vector:
-		switch reflect.TypeOf(vv.values).Kind() {
-		case reflect.Slice:
-			elemType := reflect.TypeOf(vv.values).Elem().Kind()
-			switch elemType {
-			case reflect.Float32:
-				typ = "float32"
-				if err = c.checkExec(func() C.int { return C.dpiVector_setValue(GetVectorInfo(&(data[0])), dpijsonnode) }); err != nil {
-					return fmt.Errorf("dataSetVectorValue %w", err)
-				}
-			case reflect.Float64:
-				typ = "float64"
-			case reflect.Int8:
-				typ = "int8"
-			default:
-				typ = fmt.Sprintf("unknown: %v", elemType)
-			}
-		default:
-			typ = "not a slice"
+	case Vector[float32]:
+		data[0].isNull = 0
+		var vecInfo *C.vectorInfo
+		err = GetVectorInfo[float32](x.values, &vecInfo)
+		if err != nil {
+			return fmt.Errorf("dataSetVectorValue %w", err)
 		}
-	case []Vector:
+		//defer freeVectorInfo(vecInfo)
+		if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.godror_get_Vector(&(data[0])), vecInfo) }); err != nil {
+			return fmt.Errorf("dataSetVectorValue %w", err)
+		}
+	case []Vector[float32]:
 		for i := range x {
 			data[i].isNull = 0
-			switch reflect.TypeOf(x[i].values).Kind() {
-			case reflect.Slice:
-				elemType := reflect.TypeOf(x[i].values).Elem().Kind()
-				switch elemType {
-				case reflect.Float32:
-					typ = "float32"
-					if err = c.checkExec(func() C.int { return C.dpiVector_setValue(GetVectorInfo(&(data[0])), dpijsonnode) }); err != nil {
-						return fmt.Errorf("dataSetVectorValue %w", err)
-					}
-				case reflect.Float64:
-					typ = "float64"
-				case reflect.Int8:
-					typ = "int8"
-				default:
-					typ = fmt.Sprintf("unknown: %v", elemType)
-				}
-			default:
-				typ = "not a slice"
-			}
 		}
 	default:
 		return fmt.Errorf("dataSetVectorValue not implemented for type %T", x)
