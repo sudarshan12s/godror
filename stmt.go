@@ -20,6 +20,11 @@ void godror_setFromString(dpiVar *dv, uint32_t pos, const _GoString_ value) {
 	dpiVar_setFromBytes(dv, pos, _GoStringPtr(value), length);
 }
 
+dpiVector *godror_get_Vector(dpiData *data)
+{
+    return data->value.asVector;
+}
+
 dpiAnnotation godror_getAnnotation(dpiAnnotation *annotations, int32_t idx) {
 	return annotations[idx];
 }
@@ -1366,6 +1371,13 @@ func (st *statement) bindVarTypeSwitch(ctx context.Context, info *argInfo, get *
 		info.set = st.conn.dataSetJSONValue
 		if info.isOut {
 			*get = st.conn.dataGetJSONValue
+		}
+
+	case Vector[float32], []Vector[float32]:
+		info.typ, info.natTyp = C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR
+		info.set = st.conn.dataSetVectorValue
+		if info.isOut {
+			*get = st.conn.dataGetVectorValue
 		}
 
 	default:
@@ -3571,6 +3583,51 @@ func (c *conn) dataGetJSONString(ctx context.Context, v interface{}, data []C.dp
 		return fmt.Errorf("dataGetJSONString not implemented for type %T", out)
 	}
 	return nil
+}
+
+func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.dpiData) error {
+	var vectorInfo C.dpiVectorInfo
+	if err := c.checkExec(func() C.int { return C.dpiVector_getValue(C.godror_get_Vector(&(data[0])), &vectorInfo) }); err != nil {
+		return fmt.Errorf("dataSetVectorValue %w", err)
+	}
+
+	switch out := v.(type) {
+	case *Vector[float32]:
+		*out = SetVectorInfo[float32](&vectorInfo)
+	default:
+		return fmt.Errorf("dataGetVectorValue not implemented for type %T", out)
+	}
+	return nil
+}
+
+func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dpiData, vv interface{}) error {
+	var err error = nil
+	if len(data) == 0 {
+		return nil
+	}
+	if vv == nil {
+		return dataSetNull(ctx, dv, data, nil)
+	}
+	switch x := vv.(type) {
+	case Vector[float32]:
+		data[0].isNull = 0
+		var vecInfo C.dpiVectorInfo
+		err = GetVectorInfo(x, &vecInfo)
+		if err != nil {
+			return fmt.Errorf("dataSetVectorValue %w", err)
+		}
+		//defer freeVectorInfo(vecInfo)
+		if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.godror_get_Vector(&(data[0])), &vecInfo) }); err != nil {
+			return fmt.Errorf("dataSetVectorValue %w", err)
+		}
+	case []Vector[float32]:
+		for i := range x {
+			data[i].isNull = 0
+		}
+	default:
+		return fmt.Errorf("dataSetVectorValue not implemented for type %T", x)
+	}
+	return err
 }
 
 var (
