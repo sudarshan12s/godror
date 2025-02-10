@@ -1377,7 +1377,7 @@ func (st *statement) bindVarTypeSwitch(ctx context.Context, info *argInfo, get *
 		info.typ, info.natTyp = C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR
 		info.set = st.conn.dataSetVectorValue
 		if info.isOut {
-			//*get = st.conn.dataGetVectorValue
+			*get = st.conn.dataGetVectorValue
 		}
 
 	default:
@@ -3581,6 +3581,21 @@ func (c *conn) dataGetJSONString(ctx context.Context, v interface{}, data []C.dp
 		*out = js.String()
 	default:
 		return fmt.Errorf("dataGetJSONString not implemented for type %T", out)
+	}
+	return nil
+}
+
+func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.dpiData) error {
+	var vectorInfo C.dpiVectorInfo
+	if err := c.checkExec(func() C.int { return C.dpiVector_getValue(C.godror_get_Vector(&(data[0])), &vectorInfo) }); err != nil {
+		return fmt.Errorf("dataSetVectorValue %w", err)
+	}
+
+	switch out := v.(type) {
+	case *Vector[float32]:
+		*out = SetVectorInfo[float32](&vectorInfo)
+	default:
+		return fmt.Errorf("dataGetVectorValue not implemented for type %T", out)
 	}
 	return nil
 }

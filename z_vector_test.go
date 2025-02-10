@@ -58,13 +58,13 @@ func TestReadWriteVector(t *testing.T) {
 	var embedding = []float32{1.1, 2.2, 3.3}
 	// values for batch insert
 	/*	const num = 1
-		ids := make([]godror.Number, num)
-		docs := make([]godror.Vector[float32], num)
-		for i := range ids {
-	//		docs[i] = godror.Vector[float32]{values: embedding, indices: nil, dimentions:0, isSparse: false}
-	    docs[i] = godror.NewVector[float32](embedding, 0, nil)
-			ids[i] = godror.Number(strconv.Itoa(i))
-		}
+			ids := make([]godror.Number, num)
+			docs := make([]godror.Vector[float32], num)
+			for i := range ids {
+		//		docs[i] = godror.Vector[float32]{values: embedding, indices: nil, dimentions:0, isSparse: false}
+		    docs[i] = godror.NewVector[float32](embedding, 0, nil)
+				ids[i] = godror.Number(strconv.Itoa(i))
+			}
 	*/
 	// value for last row to simulate single row insert
 	//	lastIndex := godror.Number(strconv.Itoa(num))
@@ -80,6 +80,7 @@ func TestReadWriteVector(t *testing.T) {
 	} {
 		if _, err = stmt.ExecContext(ctx, tC.ID, tC.EMBEDDING); err != nil {
 			t.Errorf("%d/1. (%v): %v", tN, tC.EMBEDDING, err)
+			t.Logf("%d. JSON Document insert erro %v: ", tN, err)
 			continue
 		}
 
@@ -87,6 +88,7 @@ func TestReadWriteVector(t *testing.T) {
 		rows, err = conn.QueryContext(ctx,
 			"SELECT id, embedding FROM "+tbl) //nolint:gas
 		if err != nil {
+			t.Logf("%d. select error erro %v: ", tN, err)
 			t.Errorf("%d/3. %v", tN, err)
 			continue
 		}
