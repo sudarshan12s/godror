@@ -41,7 +41,7 @@ func TestReadWriteVector(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	t.Logf(" JSON Document table  %q: ", tbl)
+	t.Logf(" Vector table  %q: ", tbl)
 
 	defer testDb.Exec(
 		"DROP TABLE " + tbl, //nolint:gas
@@ -69,18 +69,17 @@ func TestReadWriteVector(t *testing.T) {
 	// value for last row to simulate single row insert
 	//	lastIndex := godror.Number(strconv.Itoa(num))
 	lastIndex := 1
-	//	lastJSONDoc := godror.Vector[float32]{values: embedding}
-	lastJSONDoc := godror.NewVector[float32](embedding, 0, nil)
+	lastVectorDoc := godror.NewVector[float32](embedding, 0, nil)
 
 	for tN, tC := range []struct {
 		ID        interface{}
 		EMBEDDING godror.Vector[float32]
 	}{
-		{EMBEDDING: lastJSONDoc, ID: lastIndex},
+		{EMBEDDING: lastVectorDoc, ID: lastIndex},
 	} {
 		if _, err = stmt.ExecContext(ctx, tC.ID, tC.EMBEDDING); err != nil {
 			t.Errorf("%d/1. (%v): %v", tN, tC.EMBEDDING, err)
-			t.Logf("%d. JSON Document insert erro %v: ", tN, err)
+			t.Logf("%d. Vector Document insert erro %v: ", tN, err)
 			continue
 		}
 
@@ -93,9 +92,9 @@ func TestReadWriteVector(t *testing.T) {
 			continue
 		}
 		var id interface{}
-		var jsondoc godror.Vector[float32]
+		var vectordoc godror.Vector[float32]
 		for rows.Next() {
-			if err = rows.Scan(&id, &jsondoc); err != nil {
+			if err = rows.Scan(&id, &vectordoc); err != nil {
 				rows.Close()
 				t.Errorf("%d/3. scan: %v", tN, err)
 				continue
@@ -104,9 +103,9 @@ func TestReadWriteVector(t *testing.T) {
 			if err != nil {
 				t.Errorf("%d. %v", id, err)
 			} else {
-				t.Logf("%d. JSON Document read %q: ", id, jsondoc)
+				t.Logf("%d. Vector Document read %q: ", id, vectordoc)
 
-				v := jsondoc.GetValues()
+				v := vectordoc.GetValues()
 				eq := reflect.DeepEqual(embedding, v)
 				if !eq {
 					t.Errorf("Got %+v, wanted %+v", v, embedding)

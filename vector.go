@@ -29,10 +29,10 @@ type Numeric interface {
 
 // Vector holds the embedding VECTOR column starting from 23ai.
 type Vector[T Numeric] struct {
-	indices    []uint32 // Indices of non-zero values (sparse format)
-	dimensions int      // Total dimensions of the vector (can be set explicitly)
-	values     []T      // Non-zero values (sparse format) or all values (dense format)
-	isSparse   bool     // Flag to detect if it's a sparse vector
+	Indices    []uint32 // Indices of non-zero values (sparse format)
+	Dimensions int      // Total dimensions of the vector (can be set explicitly)
+	Values     []T      // Non-zero values (sparse format) or all values (dense format)
+	IsSparse   bool     // Flag to detect if it's a sparse vector
 }
 
 // NewVector creates either a sparse or dense vector
@@ -42,38 +42,38 @@ func NewVector[T Numeric](values []T, dims int, indices []uint32) Vector[T] {
 
 	// Determine if it's sparse or dense
 	if indices != nil {
-		return Vector[T]{indices: indices, values: values, dimensions: dims, isSparse: true}
+		return Vector[T]{Indices: indices, Values: values, Dimensions: dims, IsSparse: true}
 	}
 
 	// If no indices are provided, it's a dense vector
 	// Default dims to length of values and ignored provided dims
 	dim := len(values)
 
-	return Vector[T]{values: values, dimensions: dim, isSparse: false}
+	return Vector[T]{Values: values, Dimensions: dim, IsSparse: false}
 }
 
 // GetValues returns the values of the vector
 func (v Vector[T]) GetValues() []T {
-	return v.values
+	return v.Values
 }
 
 // GetIndices returns the indices of the sparse vector, or nil if dense
 func (v Vector[T]) GetIndices() []uint32 {
-	if v.isSparse {
-		return v.indices
+	if v.IsSparse {
+		return v.Indices
 	}
 	return nil
 }
 
 // GetDims returns the dimension of the vector
 func (v Vector[T]) GetDims() int {
-	return v.dimensions
+	return v.Dimensions
 }
 
 // IsSparse checks if the vector is sparse
-func (v Vector[T]) IsSparse() bool {
-	return v.isSparse
-}
+//func (v Vector[T]) IsSparse() bool {
+	//return v.IsSparse
+//}
 
 // String provides a human-readable representation of Vector
 func (v Vector[T]) String() string {
@@ -84,8 +84,9 @@ func (v Vector[T]) String() string {
 		return fmt.Sprintf("SparseVector(indices: %s, values: %s, dims: %d, type: %s)", indexStr, valueStr, v.dimensions, *new(T))
 	} */
 	// Format: DenseVector(values: [...], dims: X)
-	valueStr := fmt.Sprintf("%v", v.values)
-	return fmt.Sprintf("DenseVector(values: %s, dims: %d, type: %T)", valueStr, v.dimensions, *new(T))
+	valueStr := fmt.Sprintf("%v", v.Values)
+  fmt.Println(" indices ", v.Indices)
+	return fmt.Sprintf("DenseVector(values: %s, dims: %d, format: %T)", valueStr, v.Dimensions, *new(T))
 }
 
 // GetVectorInfo converts a Go `Vector` into a `dpiVectorInfo` C struct
@@ -94,11 +95,11 @@ func GetVectorInfo[T Numeric](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 	var dimensionSize C.uint8_t
 	var dataPtr unsafe.Pointer
 
-	switch any(v.values).(type) {
+	switch any(v.Values).(type) {
 	case []float32:
 		format = C.DPI_VECTOR_FORMAT_FLOAT32
 		dimensionSize = 4
-		dataPtr = unsafe.Pointer(&v.values[0])
+		dataPtr = unsafe.Pointer(&v.Values[0])
 		//		ptr := (*C.void)(C.malloc(C.size_t(len(v.values)) * C.size_t(unsafe.Sizeof(C.float(0)))))
 		//	cArray := (*[1 << 30]C.float)(unsafe.Pointer(ptr))[:len(v.values):len(v.values)]
 		//for i, val := range v.values {
@@ -123,7 +124,7 @@ func GetVectorInfo[T Numeric](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 		//for i, val := range v.values.([]float64) {
 		//cArray[i] = C.double(val)
 		//}
-		dataPtr = unsafe.Pointer(&v.values[0])
+		dataPtr = unsafe.Pointer(&v.Values[0])
 	case []int8:
 		format = C.DPI_VECTOR_FORMAT_INT8
 		dimensionSize = 1
@@ -132,9 +133,9 @@ func GetVectorInfo[T Numeric](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 		//for i, v := range v.values.([]int8) {
 		//cArray[i] = C.int8_t(v)
 		//	}
-		dataPtr = unsafe.Pointer(&v.values[0])
+		dataPtr = unsafe.Pointer(&v.Values[0])
 	default:
-		panic(fmt.Sprintf("Unsupported type: %T", v.values))
+		panic(fmt.Sprintf("Unsupported type: %T", v.Values))
 	}
 
 	// Handle sparse indices
@@ -154,7 +155,7 @@ func GetVectorInfo[T Numeric](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 		} */
 
 	vectorInfo.format = format
-	vectorInfo.numDimensions = C.uint32_t(v.dimensions)
+	vectorInfo.numDimensions = C.uint32_t(v.Dimensions)
 	vectorInfo.dimensionSize = dimensionSize
 	//	vectorInfo.numSparseValues = C.uint32_t(numSparseValues)
 	//	vectorInfo.sparseIndices = sparseIndices
@@ -205,9 +206,9 @@ func SetVectorInfo[T Numeric](vecInfo *C.dpiVectorInfo) Vector[T] {
 	} */
 
 	return Vector[T]{
-		indices:    indices,
-		dimensions: int(vecInfo.numDimensions),
-		values:     values,
-		isSparse:   isSparse,
+		Indices:    indices,
+		Dimensions: int(vecInfo.numDimensions),
+		Values:     values,
+		IsSparse:   isSparse,
 	}
 }
