@@ -35,23 +35,6 @@ type Vector[T Format] struct {
 	IsSparse   bool     // Flag to detect if it's a sparse vector
 }
 
-// NewVector creates either a sparse or dense vector
-// 1. If indices are provided -> Sparse vector
-// 2. If indices are nil -> Dense vector
-func NewVector[T Format](values []T, dims int, indices []uint32) Vector[T] {
-
-	// Determine if it's sparse or dense
-	if indices != nil {
-		return Vector[T]{Indices: indices, Values: values, Dimensions: dims, IsSparse: true}
-	}
-
-	// If no indices are provided, it's a dense vector
-	// Default dims to length of values and ignored provided dims
-	dim := len(values)
-
-	return Vector[T]{Values: values, Dimensions: dim, IsSparse: false}
-}
-
 // GetValues returns the values of the vector
 func (v Vector[T]) GetValues() []T {
 	return v.Values
