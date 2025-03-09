@@ -1368,6 +1368,13 @@ func (st *statement) bindVarTypeSwitch(ctx context.Context, info *argInfo, get *
 			*get = st.conn.dataGetJSONValue
 		}
 
+	case Vector[float32], []Vector[float32]:
+		info.typ, info.natTyp = C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR
+		info.set = st.conn.dataSetVectorValue
+		if info.isOut {
+			*get = st.conn.dataGetVectorValue
+		}
+
 	default:
 		if logger != nil && logger.Enabled(ctx, slog.LevelDebug) {
 			logger.Debug("bindVarTypeSwitch default", "value", fmt.Sprintf("%T", value))
@@ -3571,6 +3578,63 @@ func (c *conn) dataGetJSONString(ctx context.Context, v interface{}, data []C.dp
 		return fmt.Errorf("dataGetJSONString not implemented for type %T", out)
 	}
 	return nil
+}
+
+func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.dpiData) error {
+	var vectorInfo C.dpiVectorInfo
+	if err := c.checkExec(func() C.int { return C.dpiVector_getValue(C.dpiData_getVector(&(data[0])), &vectorInfo) }); err != nil {
+		return fmt.Errorf("dataSetVectorValue %w", err)
+	}
+
+	switch out := v.(type) {
+	case *Vector[float32]:
+		*out = SetVectorInfo[float32](&vectorInfo)
+	default:
+		return fmt.Errorf("dataGetVectorValue not implemented for type %T", out)
+	}
+	return nil
+}
+
+func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dpiData, vv interface{}) error {
+	var err error = nil
+	if len(data) == 0 {
+		return nil
+	}
+	if vv == nil {
+		return dataSetNull(ctx, dv, data, nil)
+	}
+	switch x := vv.(type) {
+	case Vector[float32]:
+		data[0].isNull = 0
+		var vecInfo C.dpiVectorInfo
+		err = GetVectorInfo(x, &vecInfo)
+		if err != nil {
+			return fmt.Errorf("dataSetVectorValue %w", err)
+		}
+		//defer freeVectorInfo(vecInfo)
+		if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(&(data[0])), &vecInfo) }); err != nil {
+			return fmt.Errorf("dataSetVectorValue %w", err)
+		}
+	case []Vector[float32]:
+		for i := range x {
+			data[i].isNull = 0
+			var vecInfo C.dpiVectorInfo
+			err = GetVectorInfo(x[i], &vecInfo)
+			if err != nil {
+				return fmt.Errorf("dataSetVectorValue %w", err)
+			}
+			if vecInfo.numDimensions == 0 {
+				data[i].isNull = 1
+				continue
+			}
+			if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(&(data[i])), &vecInfo) }); err != nil {
+				return fmt.Errorf("dataSetVectorValue %w", err)
+			}
+		}
+	default:
+		return fmt.Errorf("dataSetVectorValue not implemented for type %T", x)
+	}
+	return err
 }
 
 var (

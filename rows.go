@@ -123,7 +123,7 @@ func (r *rows) ColumnTypeLength(index int) (length int64, ok bool) {
 		C.DPI_ORACLE_TYPE_BFILE,
 		C.DPI_NATIVE_TYPE_LOB,
 		C.DPI_ORACLE_TYPE_JSON, C.DPI_ORACLE_TYPE_JSON_OBJECT, C.DPI_ORACLE_TYPE_JSON_ARRAY,
-		C.DPI_ORACLE_TYPE_XMLTYPE:
+		C.DPI_ORACLE_TYPE_XMLTYPE, C.DPI_ORACLE_TYPE_VECTOR:
 		return math.MaxInt64, true
 	default:
 		return 0, false
@@ -191,6 +191,8 @@ func (r *rows) ColumnTypeDatabaseTypeName(index int) string {
 		return "JSON"
 	case C.DPI_ORACLE_TYPE_XMLTYPE:
 		return "XMLTYPE"
+	case C.DPI_ORACLE_TYPE_VECTOR:
+		return "VECTOR"
 	default:
 		return fmt.Sprintf("OTHER[%d]", r.columns[index].OracleType)
 	}
@@ -272,6 +274,8 @@ func (r *rows) ColumnTypeScanType(index int) reflect.Type {
 		return reflect.TypeOf(JSONObject{})
 	case C.DPI_ORACLE_TYPE_JSON_ARRAY:
 		return reflect.TypeOf(JSONArray{})
+	case C.DPI_ORACLE_TYPE_VECTOR:
+		return reflect.TypeOf(Vector[float32]{})
 	default:
 		return reflect.TypeOf("")
 	}
@@ -674,6 +678,20 @@ func (r *rows) Next(dest []driver.Value) error {
 				continue
 			}
 			dest[i] = JSONArray{dpiJsonArray: ((*C.dpiJsonArray)(unsafe.Pointer(&d.value)))}
+		case C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR:
+			if isNull {
+				dest[i] = nil
+				continue
+			}
+			switch col.NativeType {
+			case C.DPI_NATIVE_TYPE_VECTOR:
+				var vectorInfo C.dpiVectorInfo
+				if err := r.checkExec(func() C.int { return C.dpiVector_getValue(C.dpiData_getVector(d), &vectorInfo) }); err != nil {
+					return fmt.Errorf("Next %w", err)
+				}
+				dest[i] = SetVectorInfo[float32](&vectorInfo)
+			default:
+			}
 
 		default:
 			return fmt.Errorf("unsupported column type %d", typ)
