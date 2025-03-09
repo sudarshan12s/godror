@@ -14,10 +14,6 @@ package godror
 //dpiRowid *dpiData_getRowid(dpiData *data) {
 //	return data->value.asRowid;
 //}
-dpiVector *dpiData_getVector(dpiData *data)
-{
-    return data->value.asVector;
-}
 */
 import "C"
 import (

@@ -20,11 +20,6 @@ void godror_setFromString(dpiVar *dv, uint32_t pos, const _GoString_ value) {
 	dpiVar_setFromBytes(dv, pos, _GoStringPtr(value), length);
 }
 
-dpiVector *godror_get_Vector(dpiData *data)
-{
-    return data->value.asVector;
-}
-
 dpiAnnotation godror_getAnnotation(dpiAnnotation *annotations, int32_t idx) {
 	return annotations[idx];
 }
@@ -3587,7 +3582,7 @@ func (c *conn) dataGetJSONString(ctx context.Context, v interface{}, data []C.dp
 
 func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.dpiData) error {
 	var vectorInfo C.dpiVectorInfo
-	if err := c.checkExec(func() C.int { return C.dpiVector_getValue(C.godror_get_Vector(&(data[0])), &vectorInfo) }); err != nil {
+	if err := c.checkExec(func() C.int { return C.dpiVector_getValue(C.dpiData_getVector(&(data[0])), &vectorInfo) }); err != nil {
 		return fmt.Errorf("dataSetVectorValue %w", err)
 	}
 
@@ -3617,12 +3612,24 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 			return fmt.Errorf("dataSetVectorValue %w", err)
 		}
 		//defer freeVectorInfo(vecInfo)
-		if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.godror_get_Vector(&(data[0])), &vecInfo) }); err != nil {
+		if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(&(data[0])), &vecInfo) }); err != nil {
 			return fmt.Errorf("dataSetVectorValue %w", err)
 		}
 	case []Vector[float32]:
 		for i := range x {
 			data[i].isNull = 0
+			var vecInfo C.dpiVectorInfo
+			err = GetVectorInfo(x[i], &vecInfo)
+			if err != nil {
+				return fmt.Errorf("dataSetVectorValue %w", err)
+			}
+			if vecInfo.numDimensions == 0 {
+				data[i].isNull = 1
+				continue
+			}
+			if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(&(data[i])), &vecInfo) }); err != nil {
+				return fmt.Errorf("dataSetVectorValue %w", err)
+			}
 		}
 	default:
 		return fmt.Errorf("dataSetVectorValue not implemented for type %T", x)
