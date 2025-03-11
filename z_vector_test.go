@@ -19,6 +19,48 @@ import (
 	godror "github.com/godror/godror"
 )
 
+func compareSparseVector(t *testing.T, got, want godror.Vector[float32], id int) {
+	t.Helper()
+
+	if !reflect.DeepEqual(want.Values, got.Values) {
+		t.Errorf("[%d] Values mismatch: got %+v, want %+v", id, got.Values, want.Values)
+	}
+
+	if !reflect.DeepEqual(want.Indices, got.Indices) {
+		t.Errorf("[%d] Indices mismatch: got %+v, want %+v", id, got.Indices, want.Indices)
+	}
+
+	if want.Dimensions != got.Dimensions {
+		t.Errorf("[%d] Dimensions mismatch: got %+v, want %+v", id, got.Dimensions, want.Dimensions)
+	}
+
+	if want.IsSparse != got.IsSparse {
+		t.Errorf("[%d] IsSparse mismatch: got %+v, want %+v", id, got.IsSparse, want.IsSparse)
+	}
+}
+
+func compareDenseVector(t *testing.T, got, want godror.Vector[float32], id int) {
+	t.Helper()
+
+	if !reflect.DeepEqual(want.Values, got.Values) {
+		t.Errorf("[%d] Values mismatch: got %+v, want %+v", id, got.Values, want.Values)
+	}
+
+	// Only compare Dimensions if explicitly set in the dense vector
+	if want.Dimensions != 0 && want.Dimensions != got.Dimensions {
+		t.Errorf("[%d] Dimensions mismatch: got %d, want %d", id, got.Dimensions, want.Dimensions)
+	}
+
+	if got.IsSparse {
+		t.Errorf("[%d] Expected dense vector, but got IsSparse=true", id)
+	}
+
+	// Ensure Indices is empty in dense vectors
+	if len(got.Indices) > 0 {
+		t.Errorf("[%d] Expected no Indices in dense vector, but got %+v", id, got.Indices)
+	}
+}
+
 func TestReadWriteVector(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(testContext("ReadWriteVector"), 30*time.Second)
@@ -28,7 +70,7 @@ func TestReadWriteVector(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	tbl := "test_personcollection_vector" + tblSuffix
+	tbl := "test_vector" + tblSuffix
 	conn.ExecContext(ctx, "DROP TABLE "+tbl)
 	_, err = conn.ExecContext(ctx,
 		"CREATE TABLE "+tbl+" (id NUMBER(6), image_vector VECTOR, graph_vector VECTOR(5, float32, SPARSE) )", //nolint:gas
@@ -65,7 +107,6 @@ func TestReadWriteVector(t *testing.T) {
 	}
 	image_vector := godror.Vector[float32]{Values: embedding}
 
-	//	want := graph_vector
 	var got godror.Vector[float32]
 	if _, err := testDb.Exec(
 		"INSERT INTO "+tbl+" (id, image_vector, graph_vector) VALUES (:1, :2, :3) RETURNING graph_vector INTO :4",
@@ -73,17 +114,8 @@ func TestReadWriteVector(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	eq := reflect.DeepEqual(sparseValues, got.Values)
-	if !eq {
-		t.Errorf("Got %+v, wanted %+v", got.Values, sparseValues)
-	}
-	eq = reflect.DeepEqual(sparseIndices, got.Indices)
-	if !eq {
-		t.Errorf("Got %+v, wanted %+v", got.Indices, sparseIndices)
-	}
-	if got.Dimensions != sparseDimensions {
-		t.Errorf("Got %+v, wanted %+v", got.Dimensions, sparseDimensions)
-	}
+	//compareDenseVector(t, image, image_vector, int(intID))
+	compareSparseVector(t, got, graph_vector, 0)
 
 	// values for batch insert
 	const num = 3
@@ -140,22 +172,14 @@ func TestReadWriteVector(t *testing.T) {
 			} else {
 				t.Logf("%d. Vector IMAGE_VECTOR read %q: ", id, image)
 				t.Logf("%d. Vector GRAPH_VECTOR Sparse read %q: ", id, node)
-
-				eq := reflect.DeepEqual(embedding, image.Values)
-				if !eq {
-					t.Errorf("Got %+v, wanted %+v", image.Values, embedding)
+				// Convert `id` to int (assuming it was a NUMBER in SQL)
+				intID, ok := id.(int64)
+				if !ok {
+					t.Errorf("Failed to cast id to int64: got %T", id)
+					continue
 				}
-				eq = reflect.DeepEqual(sparseValues, node.Values)
-				if !eq {
-					t.Errorf("Got %+v, wanted %+v", node.Values, sparseValues)
-				}
-				eq = reflect.DeepEqual(sparseIndices, node.Indices)
-				if !eq {
-					t.Errorf("Got %+v, wanted %+v", node.Indices, sparseIndices)
-				}
-				if node.Dimensions != sparseDimensions {
-					t.Errorf("Got %+v, wanted %+v", node.Dimensions, sparseDimensions)
-				}
+				compareDenseVector(t, image, image_vector, int(intID))
+				compareSparseVector(t, node, graph_vector, int(intID))
 			}
 		}
 		rows.Close()
