@@ -22,7 +22,7 @@ import (
 	"unsafe"
 )
 
-// Format constraint for supported types
+// Storage Format supported types
 type Format interface {
 	int8 | float32 | float64 | uint8
 }
@@ -30,40 +30,17 @@ type Format interface {
 // Vector holds the embedding VECTOR column starting from 23ai.
 type Vector[T Format] struct {
 	Indices    []uint32 // Indices of non-zero values (sparse format)
-	Dimensions int      // Total dimensions of the vector (can be set explicitly)
+	Dimensions uint32   // Total dimensions of the vector (can be set explicitly)
 	Values     []T      // Non-zero values (sparse format) or all values (dense format)
 	IsSparse   bool     // Flag to detect if it's a sparse vector
 }
-
-// GetValues returns the values of the vector
-func (v Vector[T]) GetValues() []T {
-	return v.Values
-}
-
-// GetIndices returns the indices of the sparse vector, or nil if dense
-func (v Vector[T]) GetIndices() []uint32 {
-	if v.IsSparse {
-		return v.Indices
-	}
-	return nil
-}
-
-// GetDims returns the dimension of the vector
-func (v Vector[T]) GetDims() int {
-	return v.Dimensions
-}
-
-// IsSparse checks if the vector is sparse
-//func (v Vector[T]) IsSparse() bool {
-//return v.IsSparse
-//}
 
 // String provides a human-readable representation of Vector
 func (v Vector[T]) String() string {
 	if v.IsSparse {
 		// Format: SparseVector(indices: [...], values: [...], dims: X)
-		indexStr := fmt.Sprintf("%v", v.GetIndices())
-		valueStr := fmt.Sprintf("%v", v.GetValues())
+		indexStr := fmt.Sprintf("%v", v.Indices)
+		valueStr := fmt.Sprintf("%v", v.Values)
 		return fmt.Sprintf("SparseVector(indices: %s, values: %s, dims: %d, format: %T)", indexStr, valueStr, v.Dimensions, *new(T))
 	}
 	// Format: DenseVector(values: [...], dims: X)
@@ -90,18 +67,8 @@ func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 		//	}
 		C.setVectorInfoDimensions(vectorInfo, dataPtr)
 		if !v.IsSparse {
-			v.Dimensions = len(v.Values)
+			v.Dimensions = uint32(len(v.Values))
 		}
-
-		/*
-			if len(v.values) > 0 {
-				dimBuffer.asFloat = (*C.float)(unsafe.Pointer(&v.values[0]))
-			} else {
-				dimBuffer.asFloat = nil
-			}
-			// Correctly pass Go slice data to C
-			dimBuffer.asFloat = (*C.float)(unsafe.Pointer(unsafe.SliceData(v.values))) */
-
 	case []float64:
 		format = C.DPI_VECTOR_FORMAT_FLOAT64
 		dimensionSize = 8
@@ -126,9 +93,11 @@ func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 
 	// Handle sparse indices
 	var sparseIndices *C.uint32_t
+	//	var sparseIndices unsafe.Pointer
 	var numSparseValues C.uint32_t
 	if v.IsSparse {
 		numSparseValues = C.uint32_t(len(v.Indices))
+		//	sparseIndices = (*C.uint32_t)(unsafe.Pointer(&v.Indices[0]))
 		ptr := (*C.uint32_t)(C.malloc(C.size_t(numSparseValues) * C.size_t(unsafe.Sizeof(C.uint32_t(0)))))
 		cArray := (*[1 << 30]C.uint32_t)(unsafe.Pointer(ptr))[:numSparseValues:numSparseValues]
 		for i, val := range v.Indices {
@@ -137,14 +106,14 @@ func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 		sparseIndices = ptr
 	} else {
 		numSparseValues = 0
-		sparseIndices = nil
+		sparseIndices = (*C.uint32_t)(unsafe.Pointer(nil))
 	}
 
 	vectorInfo.format = format
 	vectorInfo.numDimensions = C.uint32_t(v.Dimensions)
 	vectorInfo.dimensionSize = C.uint8_t(dimensionSize)
 	vectorInfo.numSparseValues = C.uint32_t(numSparseValues)
-	vectorInfo.sparseIndices = sparseIndices
+	vectorInfo.sparseIndices = (*C.uint32_t)(sparseIndices)
 	return nil
 }
 
@@ -195,7 +164,7 @@ func SetVectorInfo[T Format](vecInfo *C.dpiVectorInfo) Vector[T] {
 
 	return Vector[T]{
 		Indices:    indices,
-		Dimensions: int(vecInfo.numDimensions),
+		Dimensions: uint32(vecInfo.numDimensions),
 		Values:     values,
 		IsSparse:   isSparse,
 	}

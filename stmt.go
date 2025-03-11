@@ -3605,20 +3605,20 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 	}
 	switch x := vv.(type) {
 	case Vector[float32]:
-		data[0].isNull = 0
 		var vecInfo C.dpiVectorInfo
+		data[0].isNull = 0
 		err = GetVectorInfo(x, &vecInfo)
 		if err != nil {
 			return fmt.Errorf("dataSetVectorValue %w", err)
 		}
-		//defer freeVectorInfo(vecInfo)
+		defer C.free(unsafe.Pointer(vecInfo.sparseIndices))
 		if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(&(data[0])), &vecInfo) }); err != nil {
 			return fmt.Errorf("dataSetVectorValue %w", err)
 		}
 	case []Vector[float32]:
 		for i := range x {
-			data[i].isNull = 0
 			var vecInfo C.dpiVectorInfo
+			data[i].isNull = 0
 			err = GetVectorInfo(x[i], &vecInfo)
 			if err != nil {
 				return fmt.Errorf("dataSetVectorValue %w", err)
@@ -3627,6 +3627,7 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 				data[i].isNull = 1
 				continue
 			}
+			defer C.free(unsafe.Pointer(vecInfo.sparseIndices))
 			if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(&(data[i])), &vecInfo) }); err != nil {
 				return fmt.Errorf("dataSetVectorValue %w", err)
 			}

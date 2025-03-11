@@ -53,12 +53,36 @@ func TestReadWriteVector(t *testing.T) {
 	}
 	defer stmt.Close()
 	var embedding = []float32{1.1, 2.2, 3.3}
+	var sparseValues = []float32{0.5, 1.2, -0.9}
+	var sparseIndices = []uint32{0, 2, 3}
+	var sparseDimensions uint32 = 5
 
-	var graph_vector godror.Vector[float32] = godror.Vector[float32]{
-		Indices:    []uint32{0, 2, 3},
-		Dimensions: 5,
-		Values:     []float32{0.5, 1.2, -0.9},
+	graph_vector := godror.Vector[float32]{
+		Indices:    sparseIndices,
+		Dimensions: sparseDimensions,
+		Values:     sparseValues,
 		IsSparse:   true,
+	}
+	image_vector := godror.Vector[float32]{Values: embedding}
+
+	//	want := graph_vector
+	var got godror.Vector[float32]
+	if _, err := testDb.Exec(
+		"INSERT INTO "+tbl+" (id, image_vector, graph_vector) VALUES (:1, :2, :3) RETURNING graph_vector INTO :4",
+		1, image_vector, graph_vector, sql.Out{Dest: &got},
+	); err != nil {
+		t.Fatal(err)
+	}
+	eq := reflect.DeepEqual(sparseValues, got.Values)
+	if !eq {
+		t.Errorf("Got %+v, wanted %+v", got.Values, sparseValues)
+	}
+	eq = reflect.DeepEqual(sparseIndices, got.Indices)
+	if !eq {
+		t.Errorf("Got %+v, wanted %+v", got.Indices, sparseIndices)
+	}
+	if got.Dimensions != sparseDimensions {
+		t.Errorf("Got %+v, wanted %+v", got.Dimensions, sparseDimensions)
 	}
 
 	// values for batch insert
@@ -117,10 +141,20 @@ func TestReadWriteVector(t *testing.T) {
 				t.Logf("%d. Vector IMAGE_VECTOR read %q: ", id, image)
 				t.Logf("%d. Vector GRAPH_VECTOR Sparse read %q: ", id, node)
 
-				v := image.GetValues()
-				eq := reflect.DeepEqual(embedding, v)
+				eq := reflect.DeepEqual(embedding, image.Values)
 				if !eq {
-					t.Errorf("Got %+v, wanted %+v", v, embedding)
+					t.Errorf("Got %+v, wanted %+v", image.Values, embedding)
+				}
+				eq = reflect.DeepEqual(sparseValues, node.Values)
+				if !eq {
+					t.Errorf("Got %+v, wanted %+v", node.Values, sparseValues)
+				}
+				eq = reflect.DeepEqual(sparseIndices, node.Indices)
+				if !eq {
+					t.Errorf("Got %+v, wanted %+v", node.Indices, sparseIndices)
+				}
+				if node.Dimensions != sparseDimensions {
+					t.Errorf("Got %+v, wanted %+v", node.Dimensions, sparseDimensions)
 				}
 			}
 		}
