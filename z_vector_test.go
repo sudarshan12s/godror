@@ -172,7 +172,6 @@ func TestReadWriteVector(t *testing.T) {
 			} else {
 				t.Logf("%d. Vector IMAGE_VECTOR read %q: ", id, image)
 				t.Logf("%d. Vector GRAPH_VECTOR Sparse read %q: ", id, node)
-				// Convert `id` to int (assuming it was a NUMBER in SQL)
 				intID, ok := id.(int64)
 				if !ok {
 					t.Errorf("Failed to cast id to int64: got %T", id)
