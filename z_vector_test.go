@@ -132,7 +132,7 @@ func TestReadWriteVector(t *testing.T) {
 
 	// value for last row to simulate single row insert
 	lastIndex := godror.Number(strconv.Itoa(num))
-	lastImage := godror.Vector[float32]{Values: embedding}
+	lastImage := image_vector
 	lastNode := graph_vector
 
 	for tN, tC := range []struct {
