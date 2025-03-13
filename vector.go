@@ -48,8 +48,10 @@ func (v Vector[T]) String() string {
 	return fmt.Sprintf("DenseVector(values: %s, dims: %d, format: %T)", valueStr, v.Dimensions, *new(T))
 }
 
-// GetVectorInfo converts a Go `Vector` into a `dpiVectorInfo` C struct
-func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
+// SetVectorValue converts a Go `Vector` into a `dpiVectorInfo` C struct
+// and sets it.
+func SetVectorValue[T Format](c *conn, v Vector[T], data *C.dpiData) error {
+	var vectorInfo C.dpiVectorInfo
 	var format C.uint8_t
 	var dimensionSize C.uint8_t
 	var numDims C.uint32_t
@@ -83,6 +85,7 @@ func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 				cArray[i] = C.int8_t(v)
 			}
 			dataPtr = unsafe.Pointer(ptr)
+			defer C.free(unsafe.Pointer(ptr))
 		} else {
 			dataPtr = unsafe.Pointer(nil)
 		}
@@ -96,6 +99,7 @@ func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 				cArray[i] = C.uint8_t(v)
 			}
 			dataPtr = unsafe.Pointer(ptr)
+			defer C.free(unsafe.Pointer(ptr))
 		} else {
 			dataPtr = unsafe.Pointer(nil)
 		}
@@ -110,7 +114,7 @@ func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 		}
 		v.Dimensions = multiplier * uint32(len(v.Values)) // avoid updating this user ptr v
 	}
-	C.setVectorInfoDimensions(vectorInfo, dataPtr)
+	C.setVectorInfoDimensions(&vectorInfo, dataPtr)
 
 	// Handle sparse indices
 	var sparseIndices *C.uint32_t
@@ -125,6 +129,7 @@ func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 			for i, val := range v.Indices {
 				cArray[i] = C.uint32_t(val)
 			}
+			defer C.free(unsafe.Pointer(ptr))
 			sparseIndices = ptr
 		}
 	} else {
@@ -137,16 +142,14 @@ func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 	vectorInfo.dimensionSize = C.uint8_t(dimensionSize)
 	vectorInfo.numSparseValues = C.uint32_t(numSparseValues)
 	vectorInfo.sparseIndices = (*C.uint32_t)(sparseIndices)
+	if err := c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(data), &vectorInfo) }); err != nil {
+		return fmt.Errorf("SetVectorValue %w", err)
+	}
 	return nil
 }
 
-// Go wrapper function
-func GetVectorInfoDimensions(info *C.dpiVectorInfo) unsafe.Pointer {
-	return C.getVectorInfoDimensions(info)
-}
-
-// SetVectorInfo converts a C `dpiVectorInfo` struct into a Go `Vector`
-func SetVectorInfo[T Format](vecInfo *C.dpiVectorInfo) Vector[T] {
+// GetVectorValue converts a C `dpiVectorInfo` struct into a Go `Vector`
+func GetVectorValue[T Format](vecInfo *C.dpiVectorInfo) Vector[T] {
 	var values []T
 	var indices []uint32
 	var isSparse bool

@@ -3590,35 +3590,24 @@ func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.d
 
 	switch out := v.(type) {
 	case *Vector[float32]:
-		*out = SetVectorInfo[float32](&vectorInfo)
+		*out = GetVectorValue[float32](&vectorInfo)
 	case *Vector[float64]:
-		*out = SetVectorInfo[float64](&vectorInfo)
+		*out = GetVectorValue[float64](&vectorInfo)
 	case *Vector[int8]:
-		*out = SetVectorInfo[int8](&vectorInfo)
+		*out = GetVectorValue[int8](&vectorInfo)
 	case *Vector[uint8]:
-		*out = SetVectorInfo[uint8](&vectorInfo)
+		*out = GetVectorValue[uint8](&vectorInfo)
 	default:
 		return fmt.Errorf("dataGetVectorValue not implemented for type %T", out)
 	}
 	return nil
 }
 
-func useVectorInfo(info *C.dpiVectorInfo) unsafe.Pointer {
-	return GetVectorInfoDimensions(info) // Call the wrapper function
-}
-
 func dataSetVectorValueHelper[T Format](c *conn, x Vector[T], data *C.dpiData) error {
-	var vecInfo C.dpiVectorInfo
 	data.isNull = 0
 
-	err := GetVectorInfo[T](x, &vecInfo)
+	err := SetVectorValue[T](c, x, data)
 	if err != nil {
-		return fmt.Errorf("dataSetVectorValue %w", err)
-	}
-	defer C.free(unsafe.Pointer(vecInfo.sparseIndices))
-	defer C.free(unsafe.Pointer(useVectorInfo(vecInfo)))
-
-	if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(data), &vecInfo) }); err != nil {
 		return fmt.Errorf("dataSetVectorValue %w", err)
 	}
 	return nil
@@ -3643,18 +3632,9 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 		err = dataSetVectorValueHelper[uint8](c, x, &data[0])
 	case []Vector[float32]:
 		for i := range x {
-			var vecInfo C.dpiVectorInfo
 			data[i].isNull = 0
-			err = GetVectorInfo(x[i], &vecInfo)
+			err = SetVectorValue(c, x[i], &data[i])
 			if err != nil {
-				return fmt.Errorf("dataSetVectorValue %w", err)
-			}
-			if vecInfo.numDimensions == 0 {
-				data[i].isNull = 1
-				continue
-			}
-			defer C.free(unsafe.Pointer(vecInfo.sparseIndices))
-			if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(&(data[i])), &vecInfo) }); err != nil {
 				return fmt.Errorf("dataSetVectorValue %w", err)
 			}
 		}

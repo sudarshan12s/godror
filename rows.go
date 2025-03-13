@@ -691,13 +691,13 @@ func (r *rows) Next(dest []driver.Value) error {
 				}
 				switch vectorInfo.format {
 				case C.DPI_VECTOR_FORMAT_FLOAT32: // float32
-					dest[i] = SetVectorInfo[float32](&vectorInfo)
+					dest[i] = GetVectorValue[float32](&vectorInfo)
 				case C.DPI_VECTOR_FORMAT_FLOAT64:
-					dest[i] = SetVectorInfo[float64](&vectorInfo)
+					dest[i] = GetVectorValue[float64](&vectorInfo)
 				case C.DPI_VECTOR_FORMAT_INT8:
-					dest[i] = SetVectorInfo[int8](&vectorInfo)
+					dest[i] = GetVectorValue[int8](&vectorInfo)
 				case C.DPI_VECTOR_FORMAT_BINARY:
-					dest[i] = SetVectorInfo[uint8](&vectorInfo)
+					dest[i] = GetVectorValue[uint8](&vectorInfo)
 				default:
 					return fmt.Errorf("unsupported VECTOR type format %d", vectorInfo.format)
 				}
