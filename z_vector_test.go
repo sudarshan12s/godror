@@ -8,60 +8,122 @@ package godror_test
 import (
 	"context"
 	"database/sql"
-	_ "errors"
-	_ "fmt"
 	"reflect"
 	"strconv"
-	_ "strings"
+	"strings"
 	"testing"
 	"time"
 
 	godror "github.com/godror/godror"
 )
 
-func compareSparseVector(t *testing.T, got, want godror.Vector[float32], id int) {
+func compareDenseVector[T godror.Format](t *testing.T, id godror.Number, got godror.Vector[T], expected godror.Vector[T]) {
 	t.Helper()
-
-	if !reflect.DeepEqual(want.Values, got.Values) {
-		t.Errorf("[%d] Values mismatch: got %+v, want %+v", id, got.Values, want.Values)
-	}
-
-	if !reflect.DeepEqual(want.Indices, got.Indices) {
-		t.Errorf("[%d] Indices mismatch: got %+v, want %+v", id, got.Indices, want.Indices)
-	}
-
-	if want.Dimensions != got.Dimensions {
-		t.Errorf("[%d] Dimensions mismatch: got %+v, want %+v", id, got.Dimensions, want.Dimensions)
-	}
-
-	if want.IsSparse != got.IsSparse {
-		t.Errorf("[%d] IsSparse mismatch: got %+v, want %+v", id, got.IsSparse, want.IsSparse)
+	if !reflect.DeepEqual(got.Values, expected.Values) {
+		t.Errorf("ID %v: expected %v, got %v", id, expected.Values, got.Values)
 	}
 }
 
-func compareDenseVector(t *testing.T, got, want godror.Vector[float32], id int) {
+func compareSparseVector[T godror.Format](t *testing.T, id godror.Number, got godror.Vector[T], expected godror.Vector[T]) {
 	t.Helper()
-
-	if !reflect.DeepEqual(want.Values, got.Values) {
-		t.Errorf("[%d] Values mismatch: got %+v, want %+v", id, got.Values, want.Values)
+	if !reflect.DeepEqual(got.Values, expected.Values) {
+		t.Errorf("ID %s: Sparse vector values mismatch. Got %+v, expected %+v", id, got.Values, expected.Values)
 	}
-
-	// Only compare Dimensions if explicitly set in the dense vector
-	if want.Dimensions != 0 && want.Dimensions != got.Dimensions {
-		t.Errorf("[%d] Dimensions mismatch: got %d, want %d", id, got.Dimensions, want.Dimensions)
+	if !reflect.DeepEqual(got.Indices, expected.Indices) {
+		t.Errorf("ID %s: Sparse vector indices mismatch. Got %+v, expected %+v", id, got.Indices, expected.Indices)
 	}
-
-	if got.IsSparse {
-		t.Errorf("[%d] Expected dense vector, but got IsSparse=true", id)
-	}
-
-	// Ensure Indices is empty in dense vectors
-	if len(got.Indices) > 0 {
-		t.Errorf("[%d] Expected no Indices in dense vector, but got %+v", id, got.Indices)
+	if got.Dimensions != expected.Dimensions {
+		t.Errorf("ID %s: Sparse vector dimensions mismatch. Got %d, expected %d", id, got.Dimensions, expected.Dimensions)
 	}
 }
 
-func TestReadWriteVector(t *testing.T) {
+// It Verifies returning VECTOR columns in outbinds
+func TestVectorOutBinds(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(testContext("OutBindsVector"), 30*time.Second)
+	defer cancel()
+	conn, err := testDb.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	tbl := "test_vector_outbind" + tblSuffix
+	conn.ExecContext(ctx, "DROP TABLE "+tbl)
+	_, err = conn.ExecContext(ctx,
+		`CREATE TABLE `+tbl+` (
+			id NUMBER(6), 
+			image_vector VECTOR, 
+			graph_vector VECTOR(5, float32, SPARSE), 
+			int_vector VECTOR(3, int8), 
+			float_vector VECTOR(4, float64), 
+			sparse_int_vector VECTOR(4, int8, SPARSE)
+		)`,
+	)
+	if err != nil {
+		if errIs(err, 902, "invalid datatype") {
+			t.Skip(err)
+		}
+		t.Fatal(err)
+	}
+	t.Logf("Vector table %q created", tbl)
+	defer testDb.Exec("DROP TABLE " + tbl)
+
+	stmt, err := conn.PrepareContext(ctx,
+		`INSERT INTO `+tbl+` (id, image_vector, graph_vector, int_vector, float_vector, sparse_int_vector) 
+		 VALUES (:1, :2, :3, :4, :5, :6) RETURNING image_vector, graph_vector, int_vector, float_vector, sparse_int_vector INTO :7, :8, :9, :10, :11`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stmt.Close()
+
+	// Test values
+	var embedding = []float32{1.1, 2.2, 3.3}
+	var sparseValuesF32 = []float32{0.5, 1.2, -0.9}
+	var sparseIndicesF32 = []uint32{0, 2, 3}
+	var sparseDimensionsF32 uint32 = 5
+
+	var intValues = []int8{1, -5, 3}
+	var floatValues = []float64{10.5, 20.3, -5.5, 3.14}
+
+	var sparseValuesI8 = []int8{-1, 4, -7}
+	var sparseIndicesI8 = []uint32{1, 2, 3}
+	var sparseDimensionsI8 uint32 = 4
+
+	var id = godror.Number("1")
+
+	// Out bind variables
+	var outImage godror.Vector[float32]
+	var outGraph godror.Vector[float32]
+	var outInt godror.Vector[int8]
+	var outFloat godror.Vector[float64]
+	var outSparseInt godror.Vector[int8]
+
+	_, err = stmt.ExecContext(ctx,
+		1, // ID
+		godror.Vector[float32]{Values: embedding},
+		godror.Vector[float32]{Values: sparseValuesF32, Indices: sparseIndicesF32, Dimensions: sparseDimensionsF32, IsSparse: true},
+		godror.Vector[int8]{Values: intValues},
+		godror.Vector[float64]{Values: floatValues},
+		godror.Vector[int8]{Values: sparseValuesI8, Indices: sparseIndicesI8, Dimensions: sparseDimensionsI8, IsSparse: true},
+		sql.Out{Dest: &outImage}, sql.Out{Dest: &outGraph}, sql.Out{Dest: &outInt}, sql.Out{Dest: &outFloat}, sql.Out{Dest: &outSparseInt},
+	)
+	if err != nil {
+		t.Fatalf("ExecContext failed: %v", err)
+	}
+
+	// Validate out bind values
+	compareDenseVector[float32](t, id, outImage, godror.Vector[float32]{Values: embedding})
+	compareDenseVector[int8](t, id, outInt, godror.Vector[int8]{Values: intValues})
+	compareDenseVector[float64](t, id, outFloat, godror.Vector[float64]{Values: floatValues})
+
+	compareSparseVector[float32](t, id, outGraph, godror.Vector[float32]{Values: sparseValuesF32, Indices: sparseIndicesF32, Dimensions: sparseDimensionsF32, IsSparse: true})
+	compareSparseVector[int8](t, id, outSparseInt, godror.Vector[int8]{Values: sparseValuesI8, Indices: sparseIndicesI8, Dimensions: sparseDimensionsI8, IsSparse: true})
+}
+
+// It Verifies insert and read of VECTOR columns.
+// empty values are also given to see an error ORA-21560 is reported.
+func TestVectorReadWrite(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(testContext("ReadWriteVector"), 30*time.Second)
 	defer cancel()
@@ -70,7 +132,162 @@ func TestReadWriteVector(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	tbl := "test_vector" + tblSuffix
+	tbl := "test_vector_table" + tblSuffix
+	conn.ExecContext(ctx, "DROP TABLE "+tbl)
+	_, err = conn.ExecContext(ctx,
+		`CREATE TABLE `+tbl+` (
+			id NUMBER(6), 
+			image_vector VECTOR, 
+			graph_vector VECTOR(5, float32, SPARSE), 
+			float64_sparse VECTOR(6, float64, SPARSE), 
+			int_vector VECTOR(3, int8), 
+			float_vector VECTOR(4, float64), 
+			uint_vector VECTOR(16, binary)
+		)`,
+	)
+	if err != nil {
+		if errIs(err, 902, "invalid datatype") {
+			t.Skip(err)
+		}
+		t.Fatal(err)
+	}
+	t.Logf("Vector table %q created", tbl)
+	defer testDb.Exec("DROP TABLE " + tbl)
+
+	stmt, err := conn.PrepareContext(ctx,
+		`INSERT INTO `+tbl+` (id, image_vector, graph_vector, float64_sparse, int_vector, float_vector, uint_vector) VALUES (:1, :2, :3, :4, :5, :6, :7)`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stmt.Close()
+
+	// Test values for each type
+	var embedding = []float32{1.1, 2.2, 3.3}
+	var sparseValues = []float32{0.5, 1.2, -0.9}
+	var sparseIndices = []uint32{0, 2, 3}
+	var sparseDimensions uint32 = 5
+
+	var sparseFloat64Values = []float64{2.5, -1.1, 4.7}
+	var sparseFloat64Indices = []uint32{1, 3, 5}
+	var sparseFloat64Dimensions uint32 = 6
+
+	var emptyValues = []float32{}
+	var emptyIndices = []uint32{}
+
+	var emptyFloat64Values = []float64{}
+	var emptyFloat64Indices = []uint32{}
+
+	var intValues = []int8{1, -5, 3}
+	var emptyIntValues = []int8{}
+
+	var floatValues = []float64{10.5, 20.3, -5.5, 3.14}
+	var emptyFloatValues = []float64{}
+
+	var uintValues = []uint8{255, 100}
+	var emptyUintValues = []uint8{}
+
+	// Define test cases
+	testCases := []struct {
+		ID            godror.Number
+		ImageVector   godror.Vector[float32]
+		GraphVector   godror.Vector[float32]
+		Float64Sparse godror.Vector[float64]
+		IntVector     godror.Vector[int8]
+		FloatVector   godror.Vector[float64]
+		UintVector    godror.Vector[uint8]
+	}{
+		// Normal values
+		{"1", godror.Vector[float32]{Values: embedding},
+			godror.Vector[float32]{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseDimensions, IsSparse: true},
+			godror.Vector[float64]{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[int8]{Values: intValues},
+			godror.Vector[float64]{Values: floatValues},
+			godror.Vector[uint8]{Values: uintValues}},
+		{"2", godror.Vector[float32]{Values: emptyValues},
+			godror.Vector[float32]{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseDimensions, IsSparse: true},
+			godror.Vector[float64]{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[int8]{Values: intValues},
+			godror.Vector[float64]{Values: floatValues},
+			godror.Vector[uint8]{Values: uintValues}},
+		{"3", godror.Vector[float32]{Values: embedding},
+			godror.Vector[float32]{Values: emptyValues, Indices: emptyIndices, Dimensions: sparseDimensions, IsSparse: true},
+			godror.Vector[float64]{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[int8]{Values: intValues},
+			godror.Vector[float64]{Values: floatValues},
+			godror.Vector[uint8]{Values: uintValues}},
+		{"4", godror.Vector[float32]{Values: embedding},
+			godror.Vector[float32]{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[float64]{Values: emptyFloat64Values, Indices: emptyFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[int8]{Values: intValues},
+			godror.Vector[float64]{Values: floatValues},
+			godror.Vector[uint8]{Values: uintValues}},
+		{"5", godror.Vector[float32]{Values: embedding},
+			godror.Vector[float32]{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[float64]{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[int8]{Values: emptyIntValues},
+			godror.Vector[float64]{Values: floatValues},
+			godror.Vector[uint8]{Values: uintValues}},
+		{"6", godror.Vector[float32]{Values: embedding},
+			godror.Vector[float32]{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[float64]{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[int8]{Values: intValues},
+			godror.Vector[float64]{Values: emptyFloatValues},
+			godror.Vector[uint8]{Values: uintValues}},
+		{"7", godror.Vector[float32]{Values: embedding},
+			godror.Vector[float32]{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[float64]{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
+			godror.Vector[int8]{Values: intValues},
+			godror.Vector[float64]{Values: floatValues},
+			godror.Vector[uint8]{Values: emptyUintValues}},
+	}
+
+	// Insert and validate each test case
+	for _, tC := range testCases {
+		if _, err = stmt.ExecContext(ctx, tC.ID, tC.ImageVector, tC.GraphVector, tC.Float64Sparse, tC.IntVector, tC.FloatVector, tC.UintVector); err != nil {
+			if tC.ID != "1" && strings.Contains(err.Error(), "ORA-21560") { // empty vector
+				// Expected Error ORA-21560
+				continue
+			}
+			t.Errorf("Insert failed for ID %s: %v", tC.ID, err)
+			continue
+		}
+
+		var gotImage godror.Vector[float32]
+		var gotGraph godror.Vector[float32]
+		var gotFloat64Sparse godror.Vector[float64]
+		var gotInt godror.Vector[int8]
+		var gotFloat godror.Vector[float64]
+		var gotUint godror.Vector[uint8]
+
+		row := conn.QueryRowContext(ctx, `SELECT image_vector, graph_vector, float64_sparse, int_vector, float_vector, uint_vector FROM `+tbl+` WHERE id = :1`, tC.ID)
+		err = row.Scan(&gotImage, &gotGraph, &gotFloat64Sparse, &gotInt, &gotFloat, &gotUint)
+		if err != nil {
+			t.Errorf("Select failed for ID %s: %v", tC.ID, err)
+			continue
+		}
+
+		// Compare all vector types
+		compareDenseVector[float32](t, tC.ID, gotImage, tC.ImageVector)
+		compareSparseVector[float32](t, tC.ID, gotGraph, tC.GraphVector)
+		compareSparseVector[float64](t, tC.ID, gotFloat64Sparse, tC.Float64Sparse) // float64 sparse comparison
+		compareDenseVector[int8](t, tC.ID, gotInt, tC.IntVector)
+		compareDenseVector[float64](t, tC.ID, gotFloat, tC.FloatVector)
+		compareDenseVector[uint8](t, tC.ID, gotUint, tC.UintVector) // uint8 remains dense
+	}
+}
+
+// It Verifies batch insert of VECTOR columns and verify the inserted rows.
+func TestVectorReadWriteBatch(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(testContext("ReadWriteVector"), 30*time.Second)
+	defer cancel()
+	conn, err := testDb.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	tbl := "test_vector_batch" + tblSuffix
 	conn.ExecContext(ctx, "DROP TABLE "+tbl)
 	_, err = conn.ExecContext(ctx,
 		"CREATE TABLE "+tbl+" (id NUMBER(6), image_vector VECTOR, graph_vector VECTOR(5, float32, SPARSE) )", //nolint:gas
@@ -107,18 +324,8 @@ func TestReadWriteVector(t *testing.T) {
 	}
 	image_vector := godror.Vector[float32]{Values: embedding}
 
-	var got godror.Vector[float32]
-	if _, err := testDb.Exec(
-		"INSERT INTO "+tbl+" (id, image_vector, graph_vector) VALUES (:1, :2, :3) RETURNING graph_vector INTO :4",
-		1, image_vector, graph_vector, sql.Out{Dest: &got},
-	); err != nil {
-		t.Fatal(err)
-	}
-	//compareDenseVector(t, image, image_vector, int(intID))
-	compareSparseVector(t, got, graph_vector, 0)
-
 	// values for batch insert
-	const num = 3
+	const num = 10 // batch size
 	ids := make([]godror.Number, num)
 	images := make([]godror.Vector[float32], num)
 	nodes := make([]godror.Vector[float32], num)
@@ -145,7 +352,7 @@ func TestReadWriteVector(t *testing.T) {
 	} {
 		if _, err = stmt.ExecContext(ctx, tC.ID, tC.IMAGE_VECTOR, tC.GRAPH_VECTOR); err != nil {
 			t.Errorf("%d/1. (%v): %v", tN, tC.IMAGE_VECTOR, err)
-			t.Logf("%d. Vector insert erro %v: ", tN, err)
+			t.Logf("%d. Vector insert error %v: ", tN, err)
 			continue
 		}
 
@@ -153,10 +360,22 @@ func TestReadWriteVector(t *testing.T) {
 		rows, err = conn.QueryContext(ctx,
 			"SELECT id, image_vector, graph_vector FROM "+tbl) //nolint:gas
 		if err != nil {
-			t.Logf("%d. select error erro %v: ", tN, err)
+			t.Logf("%d. select error error %v: ", tN, err)
 			t.Errorf("%d/3. %v", tN, err)
 			continue
 		}
+
+		var index godror.Number // Default to 0 for batch insert case.
+		if tN == 0 {
+			if ids, ok := tC.ID.([]godror.Number); ok && len(ids) > 0 {
+				index = ids[0]
+			}
+		} else {
+			if id, ok := tC.ID.(godror.Number); ok {
+				index = id
+			}
+		}
+
 		var id interface{}
 		var image godror.Vector[float32]
 		var node godror.Vector[float32]
@@ -166,21 +385,114 @@ func TestReadWriteVector(t *testing.T) {
 				t.Errorf("%d/3. scan: %v", tN, err)
 				continue
 			}
-
 			if err != nil {
 				t.Errorf("%d. %v", id, err)
 			} else {
 				t.Logf("%d. Vector IMAGE_VECTOR read %q: ", id, image)
 				t.Logf("%d. Vector GRAPH_VECTOR Sparse read %q: ", id, node)
-				intID, ok := id.(int64)
-				if !ok {
-					t.Errorf("Failed to cast id to int64: got %T", id)
-					continue
-				}
-				compareDenseVector(t, image, image_vector, int(intID))
-				compareSparseVector(t, node, graph_vector, int(intID))
+				compareDenseVector[float32](t, index, image, image_vector)
+				compareSparseVector[float32](t, index, node, graph_vector)
 			}
 		}
 		rows.Close()
 	}
+}
+
+// It Verifies Flex storage vector columns.
+func TestVectorFlex(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(testContext("BindsFlexVector"), 30*time.Second)
+	defer cancel()
+	conn, err := testDb.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	tbl := "test_vector_flexbind" + tblSuffix
+	conn.ExecContext(ctx, "DROP TABLE "+tbl)
+	_, err = conn.ExecContext(ctx,
+		`CREATE TABLE `+tbl+` (
+			id NUMBER(6), 
+			image_vector VECTOR(*,*),
+			graph_vector VECTOR(*, *, SPARSE), 
+			int_vector VECTOR(*, *), 
+			float_vector VECTOR(*, *), 
+			sparse_int_vector VECTOR(*, *, SPARSE)
+		)`,
+	)
+	if err != nil {
+		if errIs(err, 902, "invalid datatype") {
+			t.Skip(err)
+		}
+		t.Fatal(err)
+	}
+	t.Logf("Vector table %q created", tbl)
+	defer testDb.Exec("DROP TABLE " + tbl)
+
+	stmt, err := conn.PrepareContext(ctx,
+		`INSERT INTO `+tbl+` (id, image_vector, graph_vector, int_vector, float_vector, sparse_int_vector) 
+		 VALUES (:1, :2, :3, :4, :5, :6) RETURNING image_vector, graph_vector, int_vector, float_vector, sparse_int_vector INTO :7, :8, :9, :10, :11`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stmt.Close()
+
+	// Test values
+	var embedding = []float32{1.1, 2.2, 3.3}
+	var sparseValuesF32 = []float32{0.5, 1.2, -0.9}
+	var sparseIndicesF32 = []uint32{0, 2, 3}
+	var sparseDimensionsF32 uint32 = 5
+
+	var intValues = []int8{1, -5, 3}
+	var floatValues = []float64{10.5, 20.3, -5.5, 3.14}
+
+	var sparseValuesI8 = []int8{-1, 4, -7}
+	var sparseIndicesI8 = []uint32{1, 2, 3}
+	var sparseDimensionsI8 uint32 = 4
+
+	var id = godror.Number("1")
+
+	// Out bind variables
+	var outImage godror.Vector[float32]
+	var outGraph godror.Vector[float32]
+	var outInt godror.Vector[int8]
+	var outFloat godror.Vector[float64]
+	var outSparseInt godror.Vector[int8]
+
+	_, err = stmt.ExecContext(ctx,
+		1, // ID
+		godror.Vector[float32]{Values: embedding},
+		godror.Vector[float32]{Values: sparseValuesF32, Indices: sparseIndicesF32, Dimensions: sparseDimensionsF32, IsSparse: true},
+		godror.Vector[int8]{Values: intValues},
+		godror.Vector[float64]{Values: floatValues},
+		godror.Vector[int8]{Values: sparseValuesI8, Indices: sparseIndicesI8, Dimensions: sparseDimensionsI8, IsSparse: true},
+		sql.Out{Dest: &outImage}, sql.Out{Dest: &outGraph}, sql.Out{Dest: &outInt}, sql.Out{Dest: &outFloat}, sql.Out{Dest: &outSparseInt},
+	)
+	if err != nil {
+		t.Fatalf("ExecContext failed: %v", err)
+	}
+
+	// Validate out bind values
+	compareDenseVector[float32](t, id, outImage, godror.Vector[float32]{Values: embedding})
+	compareDenseVector[int8](t, id, outInt, godror.Vector[int8]{Values: intValues})
+	compareDenseVector[float64](t, id, outFloat, godror.Vector[float64]{Values: floatValues})
+
+	compareSparseVector[float32](t, id, outGraph, godror.Vector[float32]{Values: sparseValuesF32, Indices: sparseIndicesF32, Dimensions: sparseDimensionsF32, IsSparse: true})
+	compareSparseVector[int8](t, id, outSparseInt, godror.Vector[int8]{Values: sparseValuesI8, Indices: sparseIndicesI8, Dimensions: sparseDimensionsI8, IsSparse: true})
+
+	row := conn.QueryRowContext(ctx, `SELECT image_vector, graph_vector, int_vector, float_vector, sparse_int_vector FROM `+tbl+` WHERE id = 1`)
+	err = row.Scan(&outImage, &outGraph, &outInt, &outFloat, &outSparseInt)
+	if err != nil {
+		t.Errorf("Select failed for ID 1: %v", err)
+	}
+
+	// compare read values
+	compareDenseVector[float32](t, id, outImage, godror.Vector[float32]{Values: embedding})
+	compareDenseVector[int8](t, id, outInt, godror.Vector[int8]{Values: intValues})
+	compareDenseVector[float64](t, id, outFloat, godror.Vector[float64]{Values: floatValues})
+
+	compareSparseVector[float32](t, id, outGraph, godror.Vector[float32]{Values: sparseValuesF32, Indices: sparseIndicesF32, Dimensions: sparseDimensionsF32, IsSparse: true})
+	compareSparseVector[int8](t, id, outSparseInt, godror.Vector[int8]{Values: sparseValuesI8, Indices: sparseIndicesI8, Dimensions: sparseDimensionsI8, IsSparse: true})
+
 }

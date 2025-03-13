@@ -45,7 +45,6 @@ func (v Vector[T]) String() string {
 	}
 	// Format: DenseVector(values: [...], dims: X)
 	valueStr := fmt.Sprintf("%v", v.Values)
-	//	fmt.Println(" indices ", v.Indices)
 	return fmt.Sprintf("DenseVector(values: %s, dims: %d, format: %T)", valueStr, v.Dimensions, *new(T))
 }
 
@@ -53,57 +52,81 @@ func (v Vector[T]) String() string {
 func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 	var format C.uint8_t
 	var dimensionSize C.uint8_t
+	var numDims C.uint32_t
 	var dataPtr unsafe.Pointer
 
+	numDims = C.uint32_t(len(v.Values))
 	switch any(v.Values).(type) {
 	case []float32:
 		format = C.DPI_VECTOR_FORMAT_FLOAT32
 		dimensionSize = 4
-		dataPtr = unsafe.Pointer(&v.Values[0])
-		//		ptr := (*C.void)(C.malloc(C.size_t(len(v.values)) * C.size_t(unsafe.Sizeof(C.float(0)))))
-		//	cArray := (*[1 << 30]C.float)(unsafe.Pointer(ptr))[:len(v.values):len(v.values)]
-		//for i, val := range v.values {
-		//cArray[i] = C.float(val)
-		//	}
-		C.setVectorInfoDimensions(vectorInfo, dataPtr)
-		if !v.IsSparse {
-			v.Dimensions = uint32(len(v.Values))
+		if numDims > 0 {
+			dataPtr = unsafe.Pointer(&v.Values[0])
+		} else {
+			dataPtr = unsafe.Pointer(nil)
 		}
 	case []float64:
 		format = C.DPI_VECTOR_FORMAT_FLOAT64
 		dimensionSize = 8
-		//ptr := (*C.double)(C.malloc(C.size_t(len(v.values.([]float64))) * C.size_t(unsafe.Sizeof(C.double(0)))))
-		//cArray := (*[1 << 30]C.double)(unsafe.Pointer(ptr))[:len(v.values.([]float64)):len(v.values.([]float64))]
-		//for i, val := range v.values.([]float64) {
-		//cArray[i] = C.double(val)
-		//}
-		dataPtr = unsafe.Pointer(&v.Values[0])
+		if numDims > 0 {
+			dataPtr = unsafe.Pointer(&v.Values[0])
+		} else {
+			dataPtr = unsafe.Pointer(nil)
+		}
 	case []int8:
 		format = C.DPI_VECTOR_FORMAT_INT8
 		dimensionSize = 1
-		//ptr := (*C.int8_t)(C.malloc(C.size_t(len(v.values.([]int8))) * C.size_t(unsafe.Sizeof(C.int8_t(0)))))
-		//	cArray := (*[1 << 30]C.int8_t)(unsafe.Pointer(ptr))[:len(v.values.([]int8)):len(v.values.([]int8))]
-		//for i, v := range v.values.([]int8) {
-		//cArray[i] = C.int8_t(v)
-		//	}
-		dataPtr = unsafe.Pointer(&v.Values[0])
+		if numDims > 0 {
+			ptr := (*C.int8_t)(C.malloc(C.size_t(numDims) * C.size_t(unsafe.Sizeof(C.int8_t(0)))))
+			cArray := (*[1 << 30]C.int8_t)(unsafe.Pointer(ptr))[:numDims:numDims]
+			for i, v := range v.Values {
+				cArray[i] = C.int8_t(v)
+			}
+			dataPtr = unsafe.Pointer(ptr)
+		} else {
+			dataPtr = unsafe.Pointer(nil)
+		}
+	case []uint8:
+		format = C.DPI_VECTOR_FORMAT_BINARY
+		dimensionSize = 1
+		if numDims > 0 {
+			ptr := (*C.uint8_t)(C.malloc(C.size_t(numDims) * C.size_t(unsafe.Sizeof(C.uint8_t(0)))))
+			cArray := (*[1 << 30]C.uint8_t)(unsafe.Pointer(ptr))[:numDims:numDims]
+			for i, v := range v.Values {
+				cArray[i] = C.uint8_t(v)
+			}
+			dataPtr = unsafe.Pointer(ptr)
+		} else {
+			dataPtr = unsafe.Pointer(nil)
+		}
 	default:
 		panic(fmt.Sprintf("Unsupported type: %T", v.Values))
 	}
+	if !v.IsSparse {
+		var multiplier uint32 = 1
+		if format == C.DPI_VECTOR_FORMAT_BINARY {
+			// Binary vector is not supported for Sparse
+			multiplier = 8
+		}
+		v.Dimensions = multiplier * uint32(len(v.Values)) // avoid updating this user ptr v
+	}
+	C.setVectorInfoDimensions(vectorInfo, dataPtr)
 
 	// Handle sparse indices
 	var sparseIndices *C.uint32_t
 	//	var sparseIndices unsafe.Pointer
 	var numSparseValues C.uint32_t
 	if v.IsSparse {
-		numSparseValues = C.uint32_t(len(v.Indices))
-		//	sparseIndices = (*C.uint32_t)(unsafe.Pointer(&v.Indices[0]))
-		ptr := (*C.uint32_t)(C.malloc(C.size_t(numSparseValues) * C.size_t(unsafe.Sizeof(C.uint32_t(0)))))
-		cArray := (*[1 << 30]C.uint32_t)(unsafe.Pointer(ptr))[:numSparseValues:numSparseValues]
-		for i, val := range v.Indices {
-			cArray[i] = C.uint32_t(val)
+		if len(v.Indices) > 0 {
+			numSparseValues = C.uint32_t(len(v.Indices))
+			//	sparseIndices = (*C.uint32_t)(unsafe.Pointer(&v.Indices[0]))
+			ptr := (*C.uint32_t)(C.malloc(C.size_t(numSparseValues) * C.size_t(unsafe.Sizeof(C.uint32_t(0)))))
+			cArray := (*[1 << 30]C.uint32_t)(unsafe.Pointer(ptr))[:numSparseValues:numSparseValues]
+			for i, val := range v.Indices {
+				cArray[i] = C.uint32_t(val)
+			}
+			sparseIndices = ptr
 		}
-		sparseIndices = ptr
 	} else {
 		numSparseValues = 0
 		sparseIndices = (*C.uint32_t)(unsafe.Pointer(nil))
@@ -117,47 +140,54 @@ func GetVectorInfo[T Format](v Vector[T], vectorInfo *C.dpiVectorInfo) error {
 	return nil
 }
 
+// Go wrapper function
+func GetVectorInfoDimensions(info *C.dpiVectorInfo) unsafe.Pointer {
+	return C.getVectorInfoDimensions(info)
+}
+
 // SetVectorInfo converts a C `dpiVectorInfo` struct into a Go `Vector`
 func SetVectorInfo[T Format](vecInfo *C.dpiVectorInfo) Vector[T] {
 	var values []T
 	var indices []uint32
 	var isSparse bool
 
+	var nonZeroVal = vecInfo.numDimensions
+	if vecInfo.numSparseValues > 0 {
+		isSparse = true
+		indices = make([]uint32, vecInfo.numSparseValues)
+		ptr := (*[1 << 30]C.uint32_t)(unsafe.Pointer(vecInfo.sparseIndices))[:vecInfo.numSparseValues:vecInfo.numSparseValues]
+		for i, v := range ptr {
+			indices[i] = uint32(v)
+		}
+		nonZeroVal = vecInfo.numSparseValues
+		values = make([]T, vecInfo.numSparseValues)
+	} else {
+		values = make([]T, vecInfo.numDimensions)
+	}
 	// Determine data format
 	switch vecInfo.format {
 	case C.DPI_VECTOR_FORMAT_FLOAT32: // float32
-		var nonZeroVal = vecInfo.numDimensions
-		if vecInfo.numSparseValues > 0 {
-			isSparse = true
-			indices = make([]uint32, vecInfo.numSparseValues)
-			ptr := (*[1 << 30]C.uint32_t)(unsafe.Pointer(vecInfo.sparseIndices))[:vecInfo.numSparseValues:vecInfo.numSparseValues]
-			for i, v := range ptr {
-				indices[i] = uint32(v)
-			}
-			nonZeroVal = vecInfo.numSparseValues
-			values = make([]T, vecInfo.numSparseValues)
-		} else {
-			values = make([]T, vecInfo.numDimensions)
-		}
 		ptr := (*[1 << 30]float32)(unsafe.Pointer(C.getVectorInfoDimensions(vecInfo)))[:nonZeroVal:nonZeroVal]
 		for i, v := range ptr {
-			values[i] = T(v) // Convert C float to Go T
+			values[i] = T(v) // Convert C type to Go T
 		}
-		//copy(values.([]float32), ptr)
 	case C.DPI_VECTOR_FORMAT_FLOAT64: // float64
-		values = make([]T, vecInfo.numDimensions)
-		ptr := (*[1 << 30]float64)(unsafe.Pointer(C.getVectorInfoDimensions(vecInfo)))[:vecInfo.numDimensions:vecInfo.numDimensions]
+		ptr := (*[1 << 30]float64)(unsafe.Pointer(C.getVectorInfoDimensions(vecInfo)))[:nonZeroVal:nonZeroVal]
 		for i, v := range ptr {
-			values[i] = T(v) // Convert C float to Go T
+			values[i] = T(v) // Convert C type to Go T
 		}
-		//copy(values.([]float64), ptr)
 	case C.DPI_VECTOR_FORMAT_INT8: // int8
-		values = make([]T, vecInfo.numDimensions)
-		ptr := (*[1 << 30]int8)(unsafe.Pointer(C.getVectorInfoDimensions(vecInfo)))[:vecInfo.numDimensions:vecInfo.numDimensions]
+		ptr := (*[1 << 30]int8)(unsafe.Pointer(C.getVectorInfoDimensions(vecInfo)))[:nonZeroVal:nonZeroVal]
 		for i, v := range ptr {
-			values[i] = T(v) // Convert C float to Go T
+			values[i] = T(v) // Convert C type to Go T
 		}
-		//copy(values.([]int8), ptr)
+	case C.DPI_VECTOR_FORMAT_BINARY: // uint8
+		actualSize := (vecInfo.numDimensions) / 8
+		values = make([]T, actualSize)
+		ptr := (*[1 << 30]uint8)(unsafe.Pointer(C.getVectorInfoDimensions(vecInfo)))[:actualSize:actualSize]
+		for i, v := range ptr {
+			values[i] = T(v) // Convert C type to Go T
+		}
 	default:
 		panic(fmt.Sprintf("Unknown format: %d", vecInfo.format))
 	}

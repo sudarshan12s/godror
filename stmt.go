@@ -1367,8 +1367,10 @@ func (st *statement) bindVarTypeSwitch(ctx context.Context, info *argInfo, get *
 		if info.isOut {
 			*get = st.conn.dataGetJSONValue
 		}
-
-	case Vector[float32], []Vector[float32]:
+	case Vector[float32], []Vector[float32],
+		Vector[float64], []Vector[float64],
+		Vector[int8], []Vector[int8],
+		Vector[uint8], []Vector[uint8]:
 		info.typ, info.natTyp = C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR
 		info.set = st.conn.dataSetVectorValue
 		if info.isOut {
@@ -3589,8 +3591,35 @@ func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.d
 	switch out := v.(type) {
 	case *Vector[float32]:
 		*out = SetVectorInfo[float32](&vectorInfo)
+	case *Vector[float64]:
+		*out = SetVectorInfo[float64](&vectorInfo)
+	case *Vector[int8]:
+		*out = SetVectorInfo[int8](&vectorInfo)
+	case *Vector[uint8]:
+		*out = SetVectorInfo[uint8](&vectorInfo)
 	default:
 		return fmt.Errorf("dataGetVectorValue not implemented for type %T", out)
+	}
+	return nil
+}
+
+func useVectorInfo(info *C.dpiVectorInfo) unsafe.Pointer {
+	return GetVectorInfoDimensions(info) // Call the wrapper function
+}
+
+func dataSetVectorValueHelper[T Format](c *conn, x Vector[T], data *C.dpiData) error {
+	var vecInfo C.dpiVectorInfo
+	data.isNull = 0
+
+	err := GetVectorInfo[T](x, &vecInfo)
+	if err != nil {
+		return fmt.Errorf("dataSetVectorValue %w", err)
+	}
+	defer C.free(unsafe.Pointer(vecInfo.sparseIndices))
+	defer C.free(unsafe.Pointer(useVectorInfo(vecInfo)))
+
+	if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(data), &vecInfo) }); err != nil {
+		return fmt.Errorf("dataSetVectorValue %w", err)
 	}
 	return nil
 }
@@ -3605,16 +3634,13 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 	}
 	switch x := vv.(type) {
 	case Vector[float32]:
-		var vecInfo C.dpiVectorInfo
-		data[0].isNull = 0
-		err = GetVectorInfo(x, &vecInfo)
-		if err != nil {
-			return fmt.Errorf("dataSetVectorValue %w", err)
-		}
-		defer C.free(unsafe.Pointer(vecInfo.sparseIndices))
-		if err = c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(&(data[0])), &vecInfo) }); err != nil {
-			return fmt.Errorf("dataSetVectorValue %w", err)
-		}
+		err = dataSetVectorValueHelper[float32](c, x, &data[0])
+	case Vector[float64]:
+		err = dataSetVectorValueHelper[float64](c, x, &data[0])
+	case Vector[int8]:
+		err = dataSetVectorValueHelper[int8](c, x, &data[0])
+	case Vector[uint8]:
+		err = dataSetVectorValueHelper[uint8](c, x, &data[0])
 	case []Vector[float32]:
 		for i := range x {
 			var vecInfo C.dpiVectorInfo
@@ -3745,17 +3771,20 @@ func (st *statement) openRows(ctx context.Context, colCount int) (*rows, error) 
 			}
 		}
 		col := Column{
-			Name:           C.GoStringN(info.name, C.int(info.nameLength)),
-			OracleType:     effTypeNum,
-			OrigOracleType: ti.oracleTypeNum,
-			NativeType:     ti.defaultNativeTypeNum,
-			Size:           ti.clientSizeInBytes,
-			Precision:      ti.precision,
-			Scale:          ti.scale,
-			Nullable:       info.nullOk == 1,
-			ObjectType:     ti.objectType,
-			SizeInChars:    ti.sizeInChars,
-			DBSize:         ti.dbSizeInBytes,
+			Name:             C.GoStringN(info.name, C.int(info.nameLength)),
+			OracleType:       effTypeNum,
+			OrigOracleType:   ti.oracleTypeNum,
+			NativeType:       ti.defaultNativeTypeNum,
+			Size:             ti.clientSizeInBytes,
+			Precision:        ti.precision,
+			Scale:            ti.scale,
+			Nullable:         info.nullOk == 1,
+			ObjectType:       ti.objectType,
+			SizeInChars:      ti.sizeInChars,
+			DBSize:           ti.dbSizeInBytes,
+			VectorDimensions: ti.vectorDimensions,
+			VectorFormat:     ti.vectorFormat,
+			VectorFlags:      ti.vectorFlags,
 		}
 		col.DomainAnnotation.init(ti)
 		r.columns[i] = col
@@ -3799,6 +3828,9 @@ type Column struct {
 	Scale                      C.int8_t
 	Nullable                   bool
 	DomainAnnotation
+	VectorDimensions C.uint32_t
+	VectorFormat     C.uint8_t
+	VectorFlags      C.uint8_t
 }
 
 type DomainAnnotation struct {

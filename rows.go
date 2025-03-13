@@ -689,7 +689,18 @@ func (r *rows) Next(dest []driver.Value) error {
 				if err := r.checkExec(func() C.int { return C.dpiVector_getValue(C.dpiData_getVector(d), &vectorInfo) }); err != nil {
 					return fmt.Errorf("Next %w", err)
 				}
-				dest[i] = SetVectorInfo[float32](&vectorInfo)
+				switch vectorInfo.format {
+				case C.DPI_VECTOR_FORMAT_FLOAT32: // float32
+					dest[i] = SetVectorInfo[float32](&vectorInfo)
+				case C.DPI_VECTOR_FORMAT_FLOAT64:
+					dest[i] = SetVectorInfo[float64](&vectorInfo)
+				case C.DPI_VECTOR_FORMAT_INT8:
+					dest[i] = SetVectorInfo[int8](&vectorInfo)
+				case C.DPI_VECTOR_FORMAT_BINARY:
+					dest[i] = SetVectorInfo[uint8](&vectorInfo)
+				default:
+					return fmt.Errorf("unsupported VECTOR type format %d", vectorInfo.format)
+				}
 			default:
 			}
 
