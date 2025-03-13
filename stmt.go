@@ -3584,23 +3584,24 @@ func (c *conn) dataGetJSONString(ctx context.Context, v interface{}, data []C.dp
 
 func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.dpiData) error {
 	var vectorInfo C.dpiVectorInfo
-	if err := c.checkExec(func() C.int { return C.dpiVector_getValue(C.dpiData_getVector(&(data[0])), &vectorInfo) }); err != nil {
+	var err error = nil
+	if err = c.checkExec(func() C.int { return C.dpiVector_getValue(C.dpiData_getVector(&(data[0])), &vectorInfo) }); err != nil {
 		return fmt.Errorf("dataSetVectorValue %w", err)
 	}
 
 	switch out := v.(type) {
 	case *Vector[float32]:
-		*out = GetVectorValue[float32](&vectorInfo)
+		*out, err = GetVectorValue[float32](&vectorInfo)
 	case *Vector[float64]:
-		*out = GetVectorValue[float64](&vectorInfo)
+		*out, err = GetVectorValue[float64](&vectorInfo)
 	case *Vector[int8]:
-		*out = GetVectorValue[int8](&vectorInfo)
+		*out, err = GetVectorValue[int8](&vectorInfo)
 	case *Vector[uint8]:
-		*out = GetVectorValue[uint8](&vectorInfo)
+		*out, err = GetVectorValue[uint8](&vectorInfo)
 	default:
 		return fmt.Errorf("dataGetVectorValue not implemented for type %T", out)
 	}
-	return nil
+	return err
 }
 
 func dataSetVectorValueHelper[T Format](c *conn, x Vector[T], data *C.dpiData) error {

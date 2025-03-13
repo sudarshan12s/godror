@@ -104,7 +104,7 @@ func SetVectorValue[T Format](c *conn, v Vector[T], data *C.dpiData) error {
 			dataPtr = unsafe.Pointer(nil)
 		}
 	default:
-		panic(fmt.Sprintf("Unsupported type: %T", v.Values))
+		return fmt.Errorf("Unsupported type: %T", v.Values)
 	}
 	if !v.IsSparse {
 		var multiplier uint32 = 1
@@ -149,7 +149,7 @@ func SetVectorValue[T Format](c *conn, v Vector[T], data *C.dpiData) error {
 }
 
 // GetVectorValue converts a C `dpiVectorInfo` struct into a Go `Vector`
-func GetVectorValue[T Format](vecInfo *C.dpiVectorInfo) Vector[T] {
+func GetVectorValue[T Format](vecInfo *C.dpiVectorInfo) (Vector[T], error) {
 	var values []T
 	var indices []uint32
 	var isSparse bool
@@ -192,7 +192,7 @@ func GetVectorValue[T Format](vecInfo *C.dpiVectorInfo) Vector[T] {
 			values[i] = T(v) // Convert C type to Go T
 		}
 	default:
-		panic(fmt.Sprintf("Unknown format: %d", vecInfo.format))
+		return Vector[T]{}, fmt.Errorf("Unknown format: %d", vecInfo.format)
 	}
 
 	return Vector[T]{
@@ -200,5 +200,5 @@ func GetVectorValue[T Format](vecInfo *C.dpiVectorInfo) Vector[T] {
 		Dimensions: uint32(vecInfo.numDimensions),
 		Values:     values,
 		IsSparse:   isSparse,
-	}
+	}, nil
 }

@@ -275,7 +275,19 @@ func (r *rows) ColumnTypeScanType(index int) reflect.Type {
 	case C.DPI_ORACLE_TYPE_JSON_ARRAY:
 		return reflect.TypeOf(JSONArray{})
 	case C.DPI_ORACLE_TYPE_VECTOR:
-		return reflect.TypeOf(Vector[float32]{})
+		switch col.VectorFormat {
+		case C.DPI_VECTOR_FORMAT_FLOAT32:
+			return reflect.TypeOf(Vector[float32]{})
+		case C.DPI_VECTOR_FORMAT_FLOAT64:
+			return reflect.TypeOf(Vector[float32]{})
+		case C.DPI_VECTOR_FORMAT_INT8:
+			return reflect.TypeOf(Vector[int8]{})
+		case C.DPI_VECTOR_FORMAT_BINARY:
+			return reflect.TypeOf(Vector[uint8]{})
+		default:
+			return reflect.TypeOf(Vector[float32]{})
+		}
+
 	default:
 		return reflect.TypeOf("")
 	}
@@ -686,20 +698,24 @@ func (r *rows) Next(dest []driver.Value) error {
 			switch col.NativeType {
 			case C.DPI_NATIVE_TYPE_VECTOR:
 				var vectorInfo C.dpiVectorInfo
+				var err error = nil
 				if err := r.checkExec(func() C.int { return C.dpiVector_getValue(C.dpiData_getVector(d), &vectorInfo) }); err != nil {
 					return fmt.Errorf("Next %w", err)
 				}
 				switch vectorInfo.format {
 				case C.DPI_VECTOR_FORMAT_FLOAT32: // float32
-					dest[i] = GetVectorValue[float32](&vectorInfo)
+					dest[i], err = GetVectorValue[float32](&vectorInfo)
 				case C.DPI_VECTOR_FORMAT_FLOAT64:
-					dest[i] = GetVectorValue[float64](&vectorInfo)
+					dest[i], err = GetVectorValue[float64](&vectorInfo)
 				case C.DPI_VECTOR_FORMAT_INT8:
-					dest[i] = GetVectorValue[int8](&vectorInfo)
+					dest[i], err = GetVectorValue[int8](&vectorInfo)
 				case C.DPI_VECTOR_FORMAT_BINARY:
-					dest[i] = GetVectorValue[uint8](&vectorInfo)
+					dest[i], err = GetVectorValue[uint8](&vectorInfo)
 				default:
 					return fmt.Errorf("unsupported VECTOR type format %d", vectorInfo.format)
+				}
+				if err != nil {
+					return err
 				}
 			default:
 			}
