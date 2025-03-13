@@ -1367,10 +1367,7 @@ func (st *statement) bindVarTypeSwitch(ctx context.Context, info *argInfo, get *
 		if info.isOut {
 			*get = st.conn.dataGetJSONValue
 		}
-	case Vector[float32], []Vector[float32],
-		Vector[float64], []Vector[float64],
-		Vector[int8], []Vector[int8],
-		Vector[uint8], []Vector[uint8]:
+	case Vector, []Vector:
 		info.typ, info.natTyp = C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR
 		info.set = st.conn.dataSetVectorValue
 		if info.isOut {
@@ -3590,24 +3587,18 @@ func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.d
 	}
 
 	switch out := v.(type) {
-	case *Vector[float32]:
-		*out, err = GetVectorValue[float32](&vectorInfo)
-	case *Vector[float64]:
-		*out, err = GetVectorValue[float64](&vectorInfo)
-	case *Vector[int8]:
-		*out, err = GetVectorValue[int8](&vectorInfo)
-	case *Vector[uint8]:
-		*out, err = GetVectorValue[uint8](&vectorInfo)
+	case *Vector:
+		*out, err = GetVectorValue(&vectorInfo)
 	default:
 		return fmt.Errorf("dataGetVectorValue not implemented for type %T", out)
 	}
 	return err
 }
 
-func dataSetVectorValueHelper[T Format](c *conn, x Vector[T], data *C.dpiData) error {
+func dataSetVectorValueHelper(c *conn, x Vector, data *C.dpiData) error {
 	data.isNull = 0
 
-	err := SetVectorValue[T](c, x, data)
+	err := SetVectorValue(c, x, data)
 	if err != nil {
 		return fmt.Errorf("dataSetVectorValue %w", err)
 	}
@@ -3623,33 +3614,12 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 		return dataSetNull(ctx, dv, data, nil)
 	}
 	switch x := vv.(type) {
-	case Vector[float32]:
-		err = dataSetVectorValueHelper[float32](c, x, &data[0])
-	case Vector[float64]:
-		err = dataSetVectorValueHelper[float64](c, x, &data[0])
-	case Vector[int8]:
-		err = dataSetVectorValueHelper[int8](c, x, &data[0])
-	case Vector[uint8]:
-		err = dataSetVectorValueHelper[uint8](c, x, &data[0])
-	case []Vector[float32]:
+	case Vector:
+		err = dataSetVectorValueHelper(c, x, &data[0])
+	case []Vector:
 		for i := range x {
 			data[i].isNull = 0
-			err = dataSetVectorValueHelper[float32](c, x[i], &data[i])
-		}
-	case []Vector[float64]:
-		for i := range x {
-			data[i].isNull = 0
-			err = dataSetVectorValueHelper[float64](c, x[i], &data[i])
-		}
-	case []Vector[int8]:
-		for i := range x {
-			data[i].isNull = 0
-			err = dataSetVectorValueHelper[int8](c, x[i], &data[i])
-		}
-	case []Vector[uint8]:
-		for i := range x {
-			data[i].isNull = 0
-			err = dataSetVectorValueHelper[uint8](c, x[i], &data[i])
+			err = dataSetVectorValueHelper(c, x[i], &data[i])
 		}
 	default:
 		return fmt.Errorf("dataSetVectorValue not implemented for type %T", x)
