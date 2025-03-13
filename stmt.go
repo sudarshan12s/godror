@@ -3633,10 +3633,22 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 	case []Vector[float32]:
 		for i := range x {
 			data[i].isNull = 0
-			err = SetVectorValue(c, x[i], &data[i])
-			if err != nil {
-				return fmt.Errorf("dataSetVectorValue %w", err)
-			}
+			err = dataSetVectorValueHelper[float32](c, x[i], &data[i])
+		}
+	case []Vector[float64]:
+		for i := range x {
+			data[i].isNull = 0
+			err = dataSetVectorValueHelper[float64](c, x[i], &data[i])
+		}
+	case []Vector[int8]:
+		for i := range x {
+			data[i].isNull = 0
+			err = dataSetVectorValueHelper[int8](c, x[i], &data[i])
+		}
+	case []Vector[uint8]:
+		for i := range x {
+			data[i].isNull = 0
+			err = dataSetVectorValueHelper[uint8](c, x[i], &data[i])
 		}
 	default:
 		return fmt.Errorf("dataSetVectorValue not implemented for type %T", x)
