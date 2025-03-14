@@ -3579,20 +3579,20 @@ func (c *conn) dataGetJSONString(ctx context.Context, v interface{}, data []C.dp
 	return nil
 }
 
-func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.dpiData) error {
+func (c *conn) dataGetVectorValue(ctx context.Context, v interface{},
+	data []C.dpiData) error {
 	var (
 		vectorInfo C.dpiVectorInfo
 		err        error
 	)
-	if err = c.checkExec(func() C.int {
-		return C.dpiVector_getValue(C.dpiData_getVector(&(data[0])),
-			&vectorInfo)
-	}); err != nil {
-		return fmt.Errorf("dataSetVectorValue %w", err)
-	}
-
 	switch out := v.(type) {
 	case *Vector:
+		if err = c.checkExec(func() C.int {
+			return C.dpiVector_getValue(C.dpiData_getVector(&(data[0])),
+				&vectorInfo)
+		}); err != nil {
+			return fmt.Errorf("dataSetVectorValue %w", err)
+		}
 		*out, err = GetVectorValue(&vectorInfo)
 	default:
 		return fmt.Errorf("dataGetVectorValue not implemented for type %T", out)

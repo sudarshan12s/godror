@@ -117,6 +117,8 @@ func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 		}
 		v.Dimensions = multiplier * uint32(numDims)
 	}
+
+	// update and set vectorInfo
 	vectorInfo.format = format
 	vectorInfo.numDimensions = C.uint32_t(v.Dimensions)
 	vectorInfo.dimensionSize = C.uint8_t(dimensionSize)
