@@ -1,3 +1,8 @@
+// Copyright 2025 The Godror Authors
+//
+//
+// SPDX-License-Identifier: UPL-1.0 OR Apache-2.0
+
 package godror
 
 /*
