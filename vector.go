@@ -90,7 +90,7 @@ func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 			defer C.free(unsafe.Pointer(ptr))
 		}
 	default:
-		return fmt.Errorf("Unsupported type: %T", v.Values)
+		return fmt.Errorf("SetVectorValue Unsupported type: %T in Vector Values", v.Values)
 	}
 	C.setVectorInfoDimensions(&vectorInfo, dataPtr) //update values
 
@@ -171,7 +171,7 @@ func GetVectorValue(vecInfo *C.dpiVectorInfo) (Vector, error) {
 		values = make([]uint8, size)
 		copy(values.([]uint8), ptr)
 	default:
-		return Vector{}, fmt.Errorf("Unknown VECTOR format: %d", vecInfo.format)
+		return Vector{}, fmt.Errorf("GetVectorValue Unknown VECTOR format: %d", vecInfo.format)
 	}
 
 	return Vector{
