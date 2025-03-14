@@ -683,24 +683,19 @@ func (r *rows) Next(dest []driver.Value) error {
 				dest[i] = nil
 				continue
 			}
-			switch col.NativeType {
-			case C.DPI_NATIVE_TYPE_VECTOR:
-				var vectorInfo C.dpiVectorInfo
-				var err error = nil
-				if err := r.checkExec(func() C.int { return C.dpiVector_getValue(C.dpiData_getVector(d), &vectorInfo) }); err != nil {
-					return fmt.Errorf("Next %w", err)
-				}
-				switch vectorInfo.format {
-				case C.DPI_VECTOR_FORMAT_FLOAT32, C.DPI_VECTOR_FORMAT_FLOAT64, C.DPI_VECTOR_FORMAT_INT8,
-					C.DPI_VECTOR_FORMAT_BINARY: // float32
-					dest[i], err = GetVectorValue(&vectorInfo)
-				default:
-					return fmt.Errorf("unsupported VECTOR type format %d", vectorInfo.format)
-				}
-				if err != nil {
-					return err
-				}
-			default:
+			var (
+				vectorInfo C.dpiVectorInfo
+				err        error
+			)
+			if err = r.checkExec(func() C.int {
+				return C.dpiVector_getValue(C.dpiData_getVector(d),
+					&vectorInfo)
+			}); err != nil {
+				return err
+			}
+			dest[i], err = GetVectorValue(&vectorInfo)
+			if err != nil {
+				return err
 			}
 
 		default:

@@ -22,68 +22,49 @@ import (
 	"unsafe"
 )
 
-// Vector holds the embedding VECTOR column.
+// Vector holds the embedding VECTOR column starting from 23ai.
 type Vector struct {
-	Indices    []uint32
-	Dimensions uint32
-	Values     interface{}
-	IsSparse   bool
+	Indices    []uint32    // Indices of non-zero values (sparse format).
+	Dimensions uint32      // Total dimensions of the vector.
+	Values     interface{} // Non-zero values (sparse format) or all values (dense format).
+	IsSparse   bool        // Flag to detect if it's a sparse vector
 }
 
+// It generates in below format:
+// For SPARSE: [dim, [index], [values]]
+// For Dense: [values]
 func (v Vector) String() string {
 	if v.IsSparse {
-		// Format: SparseVector(indices: [...], values: [...], dims: X)
-		indexStr := fmt.Sprintf("%v", v.Indices)
-		valueStr := fmt.Sprintf("%v", v.Values)
-		return fmt.Sprintf("SparseVector(indices: %s, values: %s, dims: %d)", indexStr, valueStr, v.Dimensions)
+		return fmt.Sprintf("[%d,%v,%v]", v.Dimensions, v.Indices, v.Values)
 	}
-	// Format: DenseVector(values: [...], dims: X)
-	valueStr := fmt.Sprintf("%v", v.Values)
-	return fmt.Sprintf("DenseVector(values: %s, dims: %d)", valueStr, v.Dimensions)
-}
-
-// getNumDims extracts the length of v.Values based on its concrete type.
-func getNumDims(values interface{}) (C.uint32_t, error) {
-	switch v := values.(type) {
-	case []float32:
-		return C.uint32_t(len(v)), nil
-	case []float64:
-		return C.uint32_t(len(v)), nil
-	case []int8:
-		return C.uint32_t(len(v)), nil
-	case []uint8:
-		return C.uint32_t(len(v)), nil
-	default:
-		return 0, fmt.Errorf("Unsupported type: %T", values)
-	}
+	return fmt.Sprintf("%v", v.Values)
 }
 
 // SetVectorValue converts a Go `Vector` into a godror data type.
 func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 	var vectorInfo C.dpiVectorInfo
-	var format C.uint8_t
-	var dimensionSize C.uint8_t
 	var dataPtr unsafe.Pointer
-
-	numDims, err := getNumDims(v.Values)
-	if err != nil {
-		return err // Return error if the type is unsupported
-	}
+	var format C.uint8_t
+	var dimensionSize uint8
+	var numDims int
 
 	switch values := v.Values.(type) {
 	case []float32:
+		numDims = len(values)
 		format = C.DPI_VECTOR_FORMAT_FLOAT32
 		dimensionSize = 4
 		if numDims > 0 {
 			dataPtr = unsafe.Pointer(&values[0])
 		}
 	case []float64:
+		numDims = len(values)
 		format = C.DPI_VECTOR_FORMAT_FLOAT64
 		dimensionSize = 8
 		if numDims > 0 {
 			dataPtr = unsafe.Pointer(&values[0])
 		}
 	case []int8:
+		numDims = len(values)
 		format = C.DPI_VECTOR_FORMAT_INT8
 		dimensionSize = 1
 		if numDims > 0 {
@@ -96,6 +77,7 @@ func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 			defer C.free(unsafe.Pointer(ptr))
 		}
 	case []uint8:
+		numDims = len(values)
 		format = C.DPI_VECTOR_FORMAT_BINARY
 		dimensionSize = 1
 		if numDims > 0 {
@@ -110,24 +92,14 @@ func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 	default:
 		return fmt.Errorf("Unsupported type: %T", v.Values)
 	}
+	C.setVectorInfoDimensions(&vectorInfo, dataPtr) //update values
 
-	if !v.IsSparse {
-		var multiplier uint32 = 1
-		if format == C.DPI_VECTOR_FORMAT_BINARY {
-			// Binary vector is not supported for Sparse
-			multiplier = 8
-		}
-		v.Dimensions = multiplier * uint32(numDims) // avoid updating this user ptr v
-	}
-	C.setVectorInfoDimensions(&vectorInfo, dataPtr)
-
-	// Handle sparse indices
-	var sparseIndices *C.uint32_t
-	var numSparseValues C.uint32_t
+	// update sparse indices
+	var sparseIndices *C.uint32_t = nil
+	var numSparseValues C.uint32_t = 0
 	if v.IsSparse {
 		if len(v.Indices) > 0 {
 			numSparseValues = C.uint32_t(len(v.Indices))
-			//	sparseIndices = (*C.uint32_t)(unsafe.Pointer(&v.Indices[0]))
 			ptr := (*C.uint32_t)(C.malloc(C.size_t(numSparseValues) * C.size_t(unsafe.Sizeof(C.uint32_t(0)))))
 			cArray := (*[1 << 30]C.uint32_t)(unsafe.Pointer(ptr))[:numSparseValues:numSparseValues]
 			for i, val := range v.Indices {
@@ -137,15 +109,22 @@ func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 			sparseIndices = ptr
 		}
 	} else {
-		numSparseValues = 0
-		sparseIndices = (*C.uint32_t)(unsafe.Pointer(nil))
+		// update Dimensions for Dense
+		var multiplier uint32 = 1
+		if format == C.DPI_VECTOR_FORMAT_BINARY {
+			// Binary vector is not supported for Sparse
+			multiplier = 8 // each byte is 8 dimensions.
+		}
+		v.Dimensions = multiplier * uint32(numDims)
 	}
 	vectorInfo.format = format
 	vectorInfo.numDimensions = C.uint32_t(v.Dimensions)
 	vectorInfo.dimensionSize = C.uint8_t(dimensionSize)
 	vectorInfo.numSparseValues = C.uint32_t(numSparseValues)
 	vectorInfo.sparseIndices = (*C.uint32_t)(sparseIndices)
-	if err := c.checkExec(func() C.int { return C.dpiVector_setValue(C.dpiData_getVector(data), &vectorInfo) }); err != nil {
+	if err := c.checkExec(func() C.int {
+		return C.dpiVector_setValue(C.dpiData_getVector(data), &vectorInfo)
+	}); err != nil {
 		return fmt.Errorf("SetVectorValue %w", err)
 	}
 	return nil
@@ -158,6 +137,8 @@ func GetVectorValue(vecInfo *C.dpiVectorInfo) (Vector, error) {
 	var isSparse bool
 
 	var nonZeroVal = vecInfo.numDimensions
+
+	// create Indices
 	if vecInfo.numSparseValues > 0 {
 		isSparse = true
 		nonZeroVal = vecInfo.numSparseValues
@@ -168,6 +149,7 @@ func GetVectorValue(vecInfo *C.dpiVectorInfo) (Vector, error) {
 		}
 	}
 
+	// create Values
 	switch vecInfo.format {
 	case C.DPI_VECTOR_FORMAT_FLOAT32:
 		ptr := (*[1 << 30]float32)(unsafe.Pointer(C.getVectorInfoDimensions(vecInfo)))[:vecInfo.numDimensions:vecInfo.numDimensions]
@@ -187,7 +169,7 @@ func GetVectorValue(vecInfo *C.dpiVectorInfo) (Vector, error) {
 		values = make([]uint8, size)
 		copy(values.([]uint8), ptr)
 	default:
-		return Vector{}, fmt.Errorf("Unknown format: %d", vecInfo.format)
+		return Vector{}, fmt.Errorf("Unknown VECTOR format: %d", vecInfo.format)
 	}
 
 	return Vector{

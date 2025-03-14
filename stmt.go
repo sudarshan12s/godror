@@ -3580,9 +3580,14 @@ func (c *conn) dataGetJSONString(ctx context.Context, v interface{}, data []C.dp
 }
 
 func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.dpiData) error {
-	var vectorInfo C.dpiVectorInfo
-	var err error = nil
-	if err = c.checkExec(func() C.int { return C.dpiVector_getValue(C.dpiData_getVector(&(data[0])), &vectorInfo) }); err != nil {
+	var (
+		vectorInfo C.dpiVectorInfo
+		err        error
+	)
+	if err = c.checkExec(func() C.int {
+		return C.dpiVector_getValue(C.dpiData_getVector(&(data[0])),
+			&vectorInfo)
+	}); err != nil {
 		return fmt.Errorf("dataSetVectorValue %w", err)
 	}
 
@@ -3595,18 +3600,8 @@ func (c *conn) dataGetVectorValue(ctx context.Context, v interface{}, data []C.d
 	return err
 }
 
-func dataSetVectorValueHelper(c *conn, x Vector, data *C.dpiData) error {
-	data.isNull = 0
-
-	err := SetVectorValue(c, x, data)
-	if err != nil {
-		return fmt.Errorf("dataSetVectorValue %w", err)
-	}
-	return nil
-}
-
-func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dpiData, vv interface{}) error {
-	var err error = nil
+func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dpiData,
+	vv interface{}) error {
 	if len(data) == 0 {
 		return nil
 	}
@@ -3615,16 +3610,21 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 	}
 	switch x := vv.(type) {
 	case Vector:
-		err = dataSetVectorValueHelper(c, x, &data[0])
+		data[0].isNull = 0
+		if err := SetVectorValue(c, x, &data[0]); err != nil {
+			return err
+		}
 	case []Vector:
 		for i := range x {
 			data[i].isNull = 0
-			err = dataSetVectorValueHelper(c, x[i], &data[i])
+			if err := SetVectorValue(c, x[i], &data[i]); err != nil {
+				return err
+			}
 		}
 	default:
 		return fmt.Errorf("dataSetVectorValue not implemented for type %T", x)
 	}
-	return err
+	return nil
 }
 
 var (
