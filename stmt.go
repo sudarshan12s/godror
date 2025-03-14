@@ -3610,12 +3610,18 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 	}
 	switch x := vv.(type) {
 	case Vector:
+		if x.Values == nil {
+			return nil
+		}
 		data[0].isNull = 0
 		if err := SetVectorValue(c, x, &data[0]); err != nil {
 			return err
 		}
 	case []Vector:
 		for i := range x {
+			if x[i].Values == nil {
+				return nil
+			}
 			data[i].isNull = 0
 			if err := SetVectorValue(c, x[i], &data[i]); err != nil {
 				return err

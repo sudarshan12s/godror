@@ -680,7 +680,7 @@ func (r *rows) Next(dest []driver.Value) error {
 			dest[i] = JSONArray{dpiJsonArray: ((*C.dpiJsonArray)(unsafe.Pointer(&d.value)))}
 		case C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR:
 			if isNull {
-				dest[i] = nil
+				dest[i] = Vector{}
 				continue
 			}
 			var (
