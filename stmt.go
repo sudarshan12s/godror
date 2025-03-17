@@ -1083,7 +1083,7 @@ func (st *statement) bindVarTypeSwitch(ctx context.Context, info *argInfo, get *
 	vlr, isValuer := value.(driver.Valuer)
 
 	switch value.(type) {
-	case *driver.Rows, *Object, *timestamppb.Timestamp:
+	case *driver.Rows, *Object, *timestamppb.Timestamp, *Vector, []*Vector:
 	default:
 		if rv := reflect.ValueOf(value); rv.Kind() == reflect.Ptr {
 			if nilPtr = rv.IsNil(); nilPtr {
@@ -1367,7 +1367,7 @@ func (st *statement) bindVarTypeSwitch(ctx context.Context, info *argInfo, get *
 		if info.isOut {
 			*get = st.conn.dataGetJSONValue
 		}
-	case Vector, []Vector:
+	case Vector, []Vector, *Vector, []*Vector:
 		info.typ, info.natTyp = C.DPI_ORACLE_TYPE_VECTOR, C.DPI_NATIVE_TYPE_VECTOR
 		info.set = st.conn.dataSetVectorValue
 		if info.isOut {
@@ -3614,16 +3614,43 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 			return nil
 		}
 		data[0].isNull = 0
+		if err := SetVectorValue(c, &x, &data[0]); err != nil {
+			return err
+		}
+	case *Vector:
+		if x == nil {
+			return nil
+		}
+		if (*x).Values == nil {
+			return nil
+		}
+		data[0].isNull = 0
 		if err := SetVectorValue(c, x, &data[0]); err != nil {
 			return err
 		}
 	case []Vector:
 		for i := range x {
 			if x[i].Values == nil {
-				return nil
+				data[i].isNull = 1
+				continue
 			}
 			data[i].isNull = 0
-			if err := SetVectorValue(c, x[i], &data[i]); err != nil {
+			if err := SetVectorValue(c, &(x[i]), &data[i]); err != nil {
+				return err
+			}
+		}
+	case []*Vector:
+		for i := range x {
+			if x == nil {
+				data[i].isNull = 1
+				continue
+			}
+			if (*x[i]).Values == nil {
+				data[i].isNull = 1
+				continue
+			}
+			data[i].isNull = 0
+			if err := SetVectorValue(c, &(*x[i]), &data[i]); err != nil {
 				return err
 			}
 		}

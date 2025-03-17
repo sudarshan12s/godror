@@ -35,15 +35,15 @@ type Vector struct {
 	IsSparse   bool        // Flag to detect if it's a sparse vector
 }
 
-// SetVectorValue converts the Go Vector into C dpiVectorInfo.
-func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
+// SetVectorValue converts a Go `Vector` into a godror data type.
+func SetVectorValue(c *conn, v *Vector, data *C.dpiData) error {
 	var vectorInfo C.dpiVectorInfo
 	var valuesPtr unsafe.Pointer
 	var format C.uint8_t
 	var dimensionSize uint8
 	var numDims int
 
-	switch values := v.Values.(type) {
+	switch values := (*v).Values.(type) {
 	case []float32:
 		numDims = len(values)
 		format = C.DPI_VECTOR_FORMAT_FLOAT32
@@ -89,9 +89,9 @@ func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 	}
 	C.setVectorInfoDimensions(&vectorInfo, valuesPtr) //update values
 
-	// update sparse indices
+	// update sparse indices and numDimensions
 	var sparseIndices *C.uint32_t = nil
-	var numSparseValues = len(v.Indices)
+	var numSparseValues = len((*v).Indices)
 	if v.IsSparse || numSparseValues > 0 {
 		if numSparseValues > 0 {
 			sparseIndices = (*C.uint32_t)(C.malloc(C.size_t(numSparseValues) * C.size_t(unsafe.Sizeof(C.uint32_t(0)))))
@@ -101,19 +101,20 @@ func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 			}
 			defer C.free(unsafe.Pointer(sparseIndices))
 		}
+		vectorInfo.numDimensions = C.uint32_t(v.Dimensions)
 	} else {
-		// update Dimensions for Dense
-		var multiplier uint32 = 1
+		// update numDimensions for Dense
+		var multiplier = 1
 		if format == C.DPI_VECTOR_FORMAT_BINARY {
 			// Binary vector is not supported for Sparse
 			multiplier = 8 // each byte is 8 dimensions.
 		}
-		v.Dimensions = multiplier * uint32(numDims)
+		numDims = multiplier * numDims
+		vectorInfo.numDimensions = C.uint32_t(numDims)
 	}
 
 	// update vectorInfo.
 	vectorInfo.format = format
-	vectorInfo.numDimensions = C.uint32_t(v.Dimensions)
 	vectorInfo.dimensionSize = C.uint8_t(dimensionSize)
 	vectorInfo.numSparseValues = C.uint32_t(numSparseValues)
 	vectorInfo.sparseIndices = (*C.uint32_t)(sparseIndices)
@@ -125,7 +126,7 @@ func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 	return nil
 }
 
-// GetVectorValue converts the C dpiVectorInfo into Go Vector
+// GetVectorValue converts a C `dpiVectorInfo` struct into a Go `Vector`
 func GetVectorValue(vectorInfo *C.dpiVectorInfo) (Vector, error) {
 	var values interface{}
 	var indices []uint32

@@ -195,7 +195,7 @@ func TestVectorReadWrite(t *testing.T) {
 		Float64Sparse godror.Vector
 		IntVector     godror.Vector
 		FloatVector   godror.Vector
-		UintVector    godror.Vector
+		UintVector    *godror.Vector
 	}{
 		// Normal values
 		{"1", godror.Vector{Values: embedding},
@@ -203,43 +203,43 @@ func TestVectorReadWrite(t *testing.T) {
 			godror.Vector{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: intValues},
 			godror.Vector{Values: floatValues},
-			godror.Vector{Values: uintValues}},
+			&godror.Vector{Values: uintValues}},
 		{"2", godror.Vector{Values: emptyValues},
 			godror.Vector{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseDimensions, IsSparse: true},
 			godror.Vector{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: intValues},
 			godror.Vector{Values: floatValues},
-			godror.Vector{Values: uintValues}},
+			&godror.Vector{Values: uintValues}},
 		{"3", godror.Vector{Values: embedding},
 			godror.Vector{Values: emptyValues, Indices: emptyIndices, Dimensions: sparseDimensions, IsSparse: true},
 			godror.Vector{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: intValues},
 			godror.Vector{Values: floatValues},
-			godror.Vector{Values: uintValues}},
+			&godror.Vector{Values: uintValues}},
 		{"4", godror.Vector{Values: embedding},
 			godror.Vector{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: emptyFloat64Values, Indices: emptyFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: intValues},
 			godror.Vector{Values: floatValues},
-			godror.Vector{Values: uintValues}},
+			&godror.Vector{Values: uintValues}},
 		{"5", godror.Vector{Values: embedding},
 			godror.Vector{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: emptyIntValues},
 			godror.Vector{Values: floatValues},
-			godror.Vector{Values: uintValues}},
+			&godror.Vector{Values: uintValues}},
 		{"6", godror.Vector{Values: embedding},
 			godror.Vector{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: intValues},
 			godror.Vector{Values: emptyFloatValues},
-			godror.Vector{Values: uintValues}},
+			&godror.Vector{Values: uintValues}},
 		{"7", godror.Vector{Values: embedding},
 			godror.Vector{Values: sparseValues, Indices: sparseIndices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: sparseFloat64Values, Indices: sparseFloat64Indices, Dimensions: sparseFloat64Dimensions, IsSparse: true},
 			godror.Vector{Values: intValues},
 			godror.Vector{Values: floatValues},
-			godror.Vector{Values: emptyUintValues}},
+			&godror.Vector{Values: emptyUintValues}},
 	}
 
 	// Insert and validate each test case
@@ -273,7 +273,7 @@ func TestVectorReadWrite(t *testing.T) {
 		compareSparseVector(t, tC.ID, gotFloat64Sparse, tC.Float64Sparse) // float64 sparse comparison
 		compareDenseVector(t, tC.ID, gotInt, tC.IntVector)
 		compareDenseVector(t, tC.ID, gotFloat, tC.FloatVector)
-		compareDenseVector(t, tC.ID, gotUint, tC.UintVector) // uint8 remains dense
+		compareDenseVector(t, tC.ID, gotUint, *tC.UintVector) // uint8 remains dense
 	}
 }
 
@@ -362,7 +362,6 @@ func TestVectorReadWriteBatch(t *testing.T) {
 			t.Errorf("%d/3. %v", tN, err)
 			continue
 		}
-		defer rows.Close()
 
 		var index godror.Number // Default to 0 for batch insert case.
 		if tN == 0 {
@@ -380,6 +379,7 @@ func TestVectorReadWriteBatch(t *testing.T) {
 		var node godror.Vector
 		for rows.Next() {
 			if err = rows.Scan(&id, &image, &node); err != nil {
+				rows.Close()
 				t.Errorf("%d/3. scan: %v", tN, err)
 				continue
 			}
@@ -392,6 +392,7 @@ func TestVectorReadWriteBatch(t *testing.T) {
 				compareSparseVector(t, index, node, graph_vector)
 			}
 		}
+		rows.Close()
 	}
 }
 
@@ -511,12 +512,11 @@ func TestVectorErrorCases(t *testing.T) {
 	conn.ExecContext(ctx, "DROP TABLE "+tbl)
 	_, err = conn.ExecContext(ctx,
 		`CREATE TABLE `+tbl+` (
-			id NUMBER(6),
-			image_vector Vector(*,*),
-			graph_vector Vector(*, *, SPARSE),
-			int_vector Vector(*, *),
-			float_vector Vector(*, *),
-			sparse_int_vector Vector(*, *, SPARSE)
+			id NUMBER(6), 
+			flex_dense_vector1 Vector(*,*),
+			flex_sparse_vector1 Vector(*, *, SPARSE), 
+			flex_dense_vector2 Vector(*, *), 
+			flex_sparse_vector2 Vector(*, *, SPARSE)
 		)`,
 	)
 	if err != nil {
@@ -529,8 +529,8 @@ func TestVectorErrorCases(t *testing.T) {
 	defer testDb.Exec("DROP TABLE " + tbl)
 
 	stmt, err := conn.PrepareContext(ctx,
-		`INSERT INTO `+tbl+` (id, image_vector, graph_vector, int_vector, float_vector, sparse_int_vector)
-		 VALUES (:1, :2, :3, :4, :5, :6) `,
+		`INSERT INTO `+tbl+` (id, flex_dense_vector1, flex_sparse_vector1, flex_dense_vector2, flex_sparse_vector2) 
+		 VALUES (:1, :2, :3, :4, :5) `,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -539,49 +539,65 @@ func TestVectorErrorCases(t *testing.T) {
 
 	// Test values
 	var emptyVector godror.Vector // pass empty vector
-	var sparseValuesF32 = []float32{0.5, 1.2, -0.9}
-	var sparseIndicesF32 = []uint32{0, 2, 3}
-	var sparseDimensionsF32 uint32 = 5
 
-	var intValues = []int8{1, -5, 3}
-	var floatValues = []float64{10.5, 20.3, -5.5, 3.14}
+	var sparseValues = []float32{0.5, 1.2, -0.9}
+	var sparseIndices = []uint32{0, 2, 3}
+	var sparseDimensions uint32 = 5
+	var sparseVec1 = godror.Vector{Values: sparseValues, Indices: sparseIndices,
+		Dimensions: sparseDimensions} //IsSparse is optional for non zero indices
 
-	var sparseValuesI8 = []int8{-1, 4, -7}
+	var nilPtrEmbedding *godror.Vector = nil
+
 	var sparseIndicesI8 = []uint32{1, 2, 3}
 	var sparseDimensionsI8 uint32 = 4
+	//IsSparse is optional for non zero indices
+	var sparseVec2 = godror.Vector{Values: []int8{1, -5, 3}, Indices: sparseIndicesI8, Dimensions: sparseDimensionsI8}
 
 	_, err = stmt.ExecContext(ctx,
 		1, // ID
 		emptyVector,
-		godror.Vector{Values: sparseValuesF32, Indices: sparseIndicesF32, Dimensions: sparseDimensionsF32, IsSparse: true},
-		godror.Vector{Values: intValues},
-		godror.Vector{Values: floatValues},
-		godror.Vector{Values: sparseValuesI8, Indices: sparseIndicesI8, Dimensions: sparseDimensionsI8, IsSparse: true},
+		&sparseVec1,
+		nilPtrEmbedding,
+		sparseVec2,
 	)
 	if err != nil {
 		t.Fatalf("ExecContext failed: %v", err)
 	}
 	var rows *sql.Rows
 	rows, err = conn.QueryContext(ctx,
-		"SELECT id, image_vector FROM "+tbl) //nolint:gas
+		"SELECT id, flex_dense_vector1, flex_sparse_vector1, flex_dense_vector2, flex_sparse_vector2 FROM "+tbl) //nolint:gas
 	if err != nil {
 		t.Logf("%d. select error error %v: ", 1, err)
 		t.Errorf("%d/3. %v", 1, err)
 	}
 	defer rows.Close()
 
-	var id interface{}
-	var image godror.Vector
+	var id = godror.Number("1")
+	var dense1 godror.Vector
+	var sparse1 godror.Vector
+	var dense2 interface{}
+	var sparse2 godror.Vector
 	for rows.Next() {
-		if err = rows.Scan(&id, &image); err != nil {
+		if err = rows.Scan(&id, &dense1, &sparse1, &dense2, &sparse2); err != nil {
+			rows.Close()
 			t.Errorf("%d/3. scan: %v", 1, err)
 			continue
 		}
 		if err != nil {
-			t.Errorf("%d. %v", id, err)
+			t.Errorf("%q. %v", id, err)
 		} else {
-			t.Logf("%d. godror.Vector IMAGE_VECTOR read %v: ", id, image)
+			t.Logf("%q. godror.Vector dense1 read %v: ", id, dense1)
+			t.Logf("%q. godror.Vector sparse1 read %v: ", id, sparse1)
+			t.Logf("%q. godror.Vector dense2 read %v: ", id, dense2)
+			t.Logf("%q. godror.Vector sparse2 read %v: ", id, sparse2)
 		}
-		compareDenseVector(t, godror.Number("1"), image, emptyVector)
+		compareDenseVector(t, id, dense1, emptyVector)
+		compareSparseVector(t, id, sparse1, sparseVec1)
+		if v, ok := dense2.(godror.Vector); ok {
+			compareDenseVector(t, id, v, emptyVector)
+		} else {
+			t.Errorf("%q. Not a valid Vector type. %v", id, dense2)
+		}
+		compareSparseVector(t, id, sparse2, sparseVec2)
 	}
 }
