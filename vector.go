@@ -35,7 +35,7 @@ type Vector struct {
 	IsSparse   bool        // Flag to detect if it's a sparse vector
 }
 
-// SetVectorValue converts a Go `Vector` into a godror data type.
+// SetVectorValue converts the Go Vector into C dpiVectorInfo.
 func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 	var vectorInfo C.dpiVectorInfo
 	var valuesPtr unsafe.Pointer
@@ -125,7 +125,7 @@ func SetVectorValue(c *conn, v Vector, data *C.dpiData) error {
 	return nil
 }
 
-// GetVectorValue converts a C `dpiVectorInfo` struct into a Go `Vector`
+// GetVectorValue converts the C dpiVectorInfo into Go Vector
 func GetVectorValue(vectorInfo *C.dpiVectorInfo) (Vector, error) {
 	var values interface{}
 	var indices []uint32
