@@ -386,8 +386,8 @@ func TestVectorReadWriteBatch(t *testing.T) {
 			if err != nil {
 				t.Errorf("%d. %v", id, err)
 			} else {
-				t.Logf("%d. godror.Vector IMAGE_VECTOR read %q: ", id, image)
-				t.Logf("%d. godror.Vector GRAPH_VECTOR Sparse read %q: ", id, node)
+				t.Logf("%d. godror.Vector IMAGE_VECTOR read %v: ", id, image)
+				t.Logf("%d. godror.Vector GRAPH_VECTOR Sparse read %v: ", id, node)
 				compareDenseVector(t, index, image, image_vector)
 				compareSparseVector(t, index, node, graph_vector)
 			}
@@ -494,4 +494,96 @@ func TestVectorFlex(t *testing.T) {
 
 	compareSparseVector(t, id, outGraph, godror.Vector{Values: sparseValuesF32, Indices: sparseIndicesF32, Dimensions: sparseDimensionsF32, IsSparse: true})
 	compareSparseVector(t, id, outSparseInt, godror.Vector{Values: sparseValuesI8, Indices: sparseIndicesI8, Dimensions: sparseDimensionsI8, IsSparse: true})
+}
+
+// It Verifies Error and edge cases.
+func TestVectorErrorCases(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(testContext("VectorErrors"), 30*time.Second)
+	defer cancel()
+
+	conn, err := testDb.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	tbl := "test_vector_error" + tblSuffix
+	conn.ExecContext(ctx, "DROP TABLE "+tbl)
+	_, err = conn.ExecContext(ctx,
+		`CREATE TABLE `+tbl+` (
+			id NUMBER(6), 
+			image_vector Vector(*,*),
+			graph_vector Vector(*, *, SPARSE), 
+			int_vector Vector(*, *), 
+			float_vector Vector(*, *), 
+			sparse_int_vector Vector(*, *, SPARSE)
+		)`,
+	)
+	if err != nil {
+		if errIs(err, 902, "invalid datatype") {
+			t.Skip(err)
+		}
+		t.Fatal(err)
+	}
+	t.Logf("Vector table %q created", tbl)
+	defer testDb.Exec("DROP TABLE " + tbl)
+
+	stmt, err := conn.PrepareContext(ctx,
+		`INSERT INTO `+tbl+` (id, image_vector, graph_vector, int_vector, float_vector, sparse_int_vector) 
+		 VALUES (:1, :2, :3, :4, :5, :6) `,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stmt.Close()
+
+	// Test values
+	var emptyVector godror.Vector // pass empty vector
+	var sparseValuesF32 = []float32{0.5, 1.2, -0.9}
+	var sparseIndicesF32 = []uint32{0, 2, 3}
+	var sparseDimensionsF32 uint32 = 5
+
+	var intValues = []int8{1, -5, 3}
+	var floatValues = []float64{10.5, 20.3, -5.5, 3.14}
+
+	var sparseValuesI8 = []int8{-1, 4, -7}
+	var sparseIndicesI8 = []uint32{1, 2, 3}
+	var sparseDimensionsI8 uint32 = 4
+
+	_, err = stmt.ExecContext(ctx,
+		1, // ID
+		emptyVector,
+		godror.Vector{Values: sparseValuesF32, Indices: sparseIndicesF32, Dimensions: sparseDimensionsF32, IsSparse: true},
+		godror.Vector{Values: intValues},
+		godror.Vector{Values: floatValues},
+		godror.Vector{Values: sparseValuesI8, Indices: sparseIndicesI8, Dimensions: sparseDimensionsI8, IsSparse: true},
+	)
+	if err != nil {
+		t.Fatalf("ExecContext failed: %v", err)
+	}
+	var rows *sql.Rows
+	rows, err = conn.QueryContext(ctx,
+		"SELECT id, image_vector FROM "+tbl) //nolint:gas
+	if err != nil {
+		t.Logf("%d. select error error %v: ", 1, err)
+		t.Errorf("%d/3. %v", 1, err)
+	}
+	defer rows.Close()
+
+	var id interface{}
+	var image godror.Vector
+	for rows.Next() {
+		if err = rows.Scan(&id, &image); err != nil {
+			rows.Close()
+			t.Errorf("%d/3. scan: %v", 1, err)
+			continue
+		}
+		if err != nil {
+			t.Errorf("%d. %v", id, err)
+		} else {
+			t.Logf("%d. godror.Vector IMAGE_VECTOR read %v: ", id, image)
+		}
+		compareDenseVector(t, godror.Number("1"), image, emptyVector)
+	}
 }
