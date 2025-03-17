@@ -362,6 +362,7 @@ func TestVectorReadWriteBatch(t *testing.T) {
 			t.Errorf("%d/3. %v", tN, err)
 			continue
 		}
+		defer rows.Close()
 
 		var index godror.Number // Default to 0 for batch insert case.
 		if tN == 0 {
@@ -379,7 +380,6 @@ func TestVectorReadWriteBatch(t *testing.T) {
 		var node godror.Vector
 		for rows.Next() {
 			if err = rows.Scan(&id, &image, &node); err != nil {
-				rows.Close()
 				t.Errorf("%d/3. scan: %v", tN, err)
 				continue
 			}
@@ -392,7 +392,6 @@ func TestVectorReadWriteBatch(t *testing.T) {
 				compareSparseVector(t, index, node, graph_vector)
 			}
 		}
-		rows.Close()
 	}
 }
 
@@ -512,11 +511,11 @@ func TestVectorErrorCases(t *testing.T) {
 	conn.ExecContext(ctx, "DROP TABLE "+tbl)
 	_, err = conn.ExecContext(ctx,
 		`CREATE TABLE `+tbl+` (
-			id NUMBER(6), 
+			id NUMBER(6),
 			image_vector Vector(*,*),
-			graph_vector Vector(*, *, SPARSE), 
-			int_vector Vector(*, *), 
-			float_vector Vector(*, *), 
+			graph_vector Vector(*, *, SPARSE),
+			int_vector Vector(*, *),
+			float_vector Vector(*, *),
 			sparse_int_vector Vector(*, *, SPARSE)
 		)`,
 	)
@@ -530,7 +529,7 @@ func TestVectorErrorCases(t *testing.T) {
 	defer testDb.Exec("DROP TABLE " + tbl)
 
 	stmt, err := conn.PrepareContext(ctx,
-		`INSERT INTO `+tbl+` (id, image_vector, graph_vector, int_vector, float_vector, sparse_int_vector) 
+		`INSERT INTO `+tbl+` (id, image_vector, graph_vector, int_vector, float_vector, sparse_int_vector)
 		 VALUES (:1, :2, :3, :4, :5, :6) `,
 	)
 	if err != nil {
@@ -575,7 +574,6 @@ func TestVectorErrorCases(t *testing.T) {
 	var image godror.Vector
 	for rows.Next() {
 		if err = rows.Scan(&id, &image); err != nil {
-			rows.Close()
 			t.Errorf("%d/3. scan: %v", 1, err)
 			continue
 		}
