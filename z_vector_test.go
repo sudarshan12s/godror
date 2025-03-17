@@ -322,7 +322,6 @@ func TestVectorReadWriteBatch(t *testing.T) {
 		t.Logf("Verifying row ID: %s", id)
 		compareDenseVector(t, expectedIDs[index], image, expectedImages[index])
 		compareSparseVector(t, expectedIDs[index], graph, expectedGraphs[index])
-
 		index++
 	}
 }
