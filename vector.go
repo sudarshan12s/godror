@@ -45,44 +45,36 @@ func SetVectorValue(c *conn, v *Vector, data *C.dpiData) error {
 
 	switch values := (*v).Values.(type) {
 	case []float32:
-		numDims = len(values)
-		format = C.DPI_VECTOR_FORMAT_FLOAT32
-		dimensionSize = 4
+		numDims, format, dimensionSize = len(values), C.DPI_VECTOR_FORMAT_FLOAT32, 4
 		if numDims > 0 {
 			valuesPtr = unsafe.Pointer(&values[0])
 		}
 	case []float64:
-		numDims = len(values)
-		format = C.DPI_VECTOR_FORMAT_FLOAT64
-		dimensionSize = 8
+		numDims, format, dimensionSize = len(values), C.DPI_VECTOR_FORMAT_FLOAT64, 8
 		if numDims > 0 {
 			valuesPtr = unsafe.Pointer(&values[0])
 		}
 	case []int8:
-		numDims = len(values)
-		format = C.DPI_VECTOR_FORMAT_INT8
-		dimensionSize = 1
+		numDims, format, dimensionSize = len(values), C.DPI_VECTOR_FORMAT_INT8, 1
 		if numDims > 0 {
 			ptr := (*C.int8_t)(C.malloc(C.size_t(numDims)))
+			defer C.free(unsafe.Pointer(ptr))
 			cArray := unsafe.Slice((*int8)(unsafe.Pointer(ptr)), numDims)
 			for i, v := range values {
 				cArray[i] = int8(v)
 			}
 			valuesPtr = unsafe.Pointer(ptr)
-			defer C.free(unsafe.Pointer(ptr))
 		}
 	case []uint8:
-		numDims = len(values)
-		format = C.DPI_VECTOR_FORMAT_BINARY
-		dimensionSize = 1
+		numDims, format, dimensionSize = len(values), C.DPI_VECTOR_FORMAT_BINARY, 1
 		if numDims > 0 {
 			ptr := (*C.uint8_t)(C.malloc(C.size_t(numDims)))
+			defer C.free(unsafe.Pointer(ptr))
 			cArray := unsafe.Slice((*uint8)(unsafe.Pointer(ptr)), numDims)
 			for i, v := range values {
 				cArray[i] = uint8(v)
 			}
 			valuesPtr = unsafe.Pointer(ptr)
-			defer C.free(unsafe.Pointer(ptr))
 		}
 	default:
 		return fmt.Errorf("SetVectorValue Unsupported type: %T in Vector Values", v.Values)
@@ -91,33 +83,32 @@ func SetVectorValue(c *conn, v *Vector, data *C.dpiData) error {
 
 	// update sparse indices and numDimensions
 	var sparseIndices *C.uint32_t = nil
-	var numSparseValues = len((*v).Indices)
+	numSparseValues := len((*v).Indices)
 	if v.IsSparse || numSparseValues > 0 {
 		if numSparseValues > 0 {
 			sparseIndices = (*C.uint32_t)(C.malloc(C.size_t(numSparseValues) * C.size_t(unsafe.Sizeof(C.uint32_t(0)))))
+			defer C.free(unsafe.Pointer(sparseIndices))
 			cArray := unsafe.Slice((*C.uint32_t)(unsafe.Pointer(sparseIndices)), numSparseValues)
 			for i, val := range v.Indices {
 				cArray[i] = C.uint32_t(val)
 			}
-			defer C.free(unsafe.Pointer(sparseIndices))
 		}
 		vectorInfo.numDimensions = C.uint32_t(v.Dimensions)
 	} else {
 		// update numDimensions for Dense
-		var multiplier = 1
 		if format == C.DPI_VECTOR_FORMAT_BINARY {
-			// Binary vector is not supported for Sparse
-			multiplier = 8 // each byte is 8 dimensions.
+			numDims *= 8 // Each byte represents 8 dimensions.
 		}
-		numDims = multiplier * numDims
 		vectorInfo.numDimensions = C.uint32_t(numDims)
 	}
 
-	// update vectorInfo.
+	// Populate vectorInfo.
 	vectorInfo.format = format
 	vectorInfo.dimensionSize = C.uint8_t(dimensionSize)
 	vectorInfo.numSparseValues = C.uint32_t(numSparseValues)
 	vectorInfo.sparseIndices = (*C.uint32_t)(sparseIndices)
+
+	// Set vector value.
 	if err := c.checkExec(func() C.int {
 		return C.dpiVector_setValue(C.dpiData_getVector(data), &vectorInfo)
 	}); err != nil {
@@ -149,7 +140,6 @@ func GetVectorValue(vectorInfo *C.dpiVectorInfo) (Vector, error) {
 	switch vectorInfo.format {
 	case C.DPI_VECTOR_FORMAT_FLOAT32:
 		ptr := unsafe.Slice((*float32)(unsafe.Pointer(C.getVectorInfoDimensions(vectorInfo))), int(vectorInfo.numDimensions))
-
 		values = make([]float32, nonZeroVal)
 		copy(values.([]float32), ptr)
 	case C.DPI_VECTOR_FORMAT_FLOAT64:

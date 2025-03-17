@@ -3600,6 +3600,32 @@ func (c *conn) dataGetVectorValue(ctx context.Context, v interface{},
 	return err
 }
 
+func (c *conn) setSingleVector(v *Vector, d *C.dpiData) error {
+	if v == nil || v.Values == nil {
+		return nil
+	}
+	d.isNull = 0
+	return SetVectorValue(c, v, d)
+}
+
+func (c *conn) setVectorSlice(vs []Vector, data []C.dpiData) error {
+	for i := range vs {
+		if err := c.setSingleVector(&vs[i], &data[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *conn) setPointerVectorSlice(vs []*Vector, data []C.dpiData) error {
+	for i, v := range vs {
+		if err := c.setSingleVector(v, &data[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dpiData,
 	vv interface{}) error {
 	if len(data) == 0 {
@@ -3608,56 +3634,19 @@ func (c *conn) dataSetVectorValue(ctx context.Context, dv *C.dpiVar, data []C.dp
 	if vv == nil {
 		return dataSetNull(ctx, dv, data, nil)
 	}
+
 	switch x := vv.(type) {
 	case Vector:
-		if x.Values == nil {
-			return nil
-		}
-		data[0].isNull = 0
-		if err := SetVectorValue(c, &x, &data[0]); err != nil {
-			return err
-		}
+		return c.setSingleVector(&x, &data[0])
 	case *Vector:
-		if x == nil {
-			return nil
-		}
-		if (*x).Values == nil {
-			return nil
-		}
-		data[0].isNull = 0
-		if err := SetVectorValue(c, x, &data[0]); err != nil {
-			return err
-		}
+		return c.setSingleVector(x, &data[0])
 	case []Vector:
-		for i := range x {
-			if x[i].Values == nil {
-				data[i].isNull = 1
-				continue
-			}
-			data[i].isNull = 0
-			if err := SetVectorValue(c, &(x[i]), &data[i]); err != nil {
-				return err
-			}
-		}
+		return c.setVectorSlice(x, data)
 	case []*Vector:
-		for i := range x {
-			if x == nil {
-				data[i].isNull = 1
-				continue
-			}
-			if (*x[i]).Values == nil {
-				data[i].isNull = 1
-				continue
-			}
-			data[i].isNull = 0
-			if err := SetVectorValue(c, &(*x[i]), &data[i]); err != nil {
-				return err
-			}
-		}
+		return c.setPointerVectorSlice(x, data)
 	default:
 		return fmt.Errorf("dataSetVectorValue not implemented for type %T", x)
 	}
-	return nil
 }
 
 var (
