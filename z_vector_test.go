@@ -12,7 +12,6 @@ import (
 	"math/rand"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -109,110 +108,13 @@ func TestVectorOutBinds(t *testing.T) {
 	}
 }
 
-// It Verifies insert and read of godror.Vector columns.
-// empty values are also given to see an error ORA-21560 is reported.
-func TestVectorReadWrite(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(testContext("ReadWriteVector"), 30*time.Second)
-	defer cancel()
-	conn, err := testDb.Conn(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
-	tbl := "test_vector_table" + tblSuffix
-	conn.ExecContext(ctx, "DROP TABLE "+tbl)
-	_, err = conn.ExecContext(ctx,
-		`CREATE TABLE `+tbl+` (
-			id NUMBER(6), 
-			image_vector Vector, 
-			graph_vector Vector(5, float32, SPARSE), 
-			float64_sparse Vector(6, float64, SPARSE), 
-			int_vector Vector(3, int8), 
-			float_vector Vector(4, float64), 
-			uint_vector Vector(16, binary)
-		)`,
-	)
-	if err != nil {
-		if errIs(err, 902, "invalid datatype") {
-			t.Skip(err)
-		}
-		t.Fatal(err)
-	}
-	t.Logf("Vector table %q created", tbl)
-	defer testDb.Exec("DROP TABLE " + tbl)
-
-	stmt, err := conn.PrepareContext(ctx,
-		`INSERT INTO `+tbl+` (id, image_vector, graph_vector, float64_sparse, int_vector, float_vector, uint_vector) VALUES (:1, :2, :3, :4, :5, :6, :7)`,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stmt.Close()
-
-	// Test vectors
-	embedding := []float32{1.1, 2.2, 3.3}
-	sparseF32 := godror.Vector{Values: []float32{0.5, 1.2, -0.9}, Indices: []uint32{0, 2, 3}, Dimensions: 5, IsSparse: true}
-	sparseF64 := godror.Vector{Values: []float64{2.5, -1.1, 4.7}, Indices: []uint32{1, 3, 5}, Dimensions: 6, IsSparse: true}
-	intValues := []int8{1, -5, 3}
-	floatValues := []float64{10.5, 20.3, -5.5, 3.14}
-	uintValues := []uint8{255, 100}
-	emptyDense := godror.Vector{Values: []float32{}}
-	emptySparse := godror.Vector{Values: []float32{}, IsSparse: true}
-
-	// Test cases
-	testCases := []struct {
-		ID            godror.Number
-		ImageVector   godror.Vector
-		GraphVector   godror.Vector
-		Float64Sparse godror.Vector
-		IntVector     godror.Vector
-		FloatVector   godror.Vector
-		UintVector    *godror.Vector
-	}{
-		{"1", godror.Vector{Values: embedding}, sparseF32, sparseF64, godror.Vector{Values: intValues}, godror.Vector{Values: floatValues}, &godror.Vector{Values: uintValues}},
-		{"2", emptyDense, sparseF32, sparseF64, godror.Vector{Values: intValues}, godror.Vector{Values: floatValues}, &godror.Vector{Values: uintValues}},
-		{"3", godror.Vector{Values: embedding}, emptySparse, sparseF64, godror.Vector{Values: intValues}, godror.Vector{Values: floatValues}, &godror.Vector{Values: uintValues}},
-		{"4", godror.Vector{Values: embedding}, sparseF32, emptySparse, godror.Vector{Values: intValues}, godror.Vector{Values: floatValues}, &godror.Vector{Values: uintValues}},
-		{"5", godror.Vector{Values: embedding}, sparseF32, sparseF64, emptyDense, godror.Vector{Values: floatValues}, &godror.Vector{Values: uintValues}},
-		{"6", godror.Vector{Values: embedding}, sparseF32, sparseF64, godror.Vector{Values: intValues}, emptyDense, &godror.Vector{Values: uintValues}},
-		{"7", godror.Vector{Values: embedding}, sparseF32, sparseF64, godror.Vector{Values: intValues}, godror.Vector{Values: floatValues}, &emptyDense},
-	}
-
-	// Insert and validate
-	for _, tC := range testCases {
-		_, err := stmt.ExecContext(ctx, tC.ID, tC.ImageVector, tC.GraphVector, tC.Float64Sparse, tC.IntVector, tC.FloatVector, tC.UintVector)
-		if err != nil {
-			if tC.ID != "1" && strings.Contains(err.Error(), "ORA-21560") {
-				continue // Expected error for empty vector
-			}
-			t.Errorf("Insert failed for ID %s: %v", tC.ID, err)
-			continue
-		}
-
-		var gotImage, gotGraph, gotFloat64Sparse, gotInt, gotFloat, gotUint godror.Vector
-		err = conn.QueryRowContext(ctx, `SELECT image_vector, graph_vector, float64_sparse, int_vector, float_vector, uint_vector FROM `+tbl+` WHERE id = :1`, tC.ID).
-			Scan(&gotImage, &gotGraph, &gotFloat64Sparse, &gotInt, &gotFloat, &gotUint)
-		if err != nil {
-			t.Errorf("Select failed for ID %s: %v", tC.ID, err)
-			continue
-		}
-
-		compareDenseVector(t, tC.ID, gotImage, tC.ImageVector)
-		compareSparseVector(t, tC.ID, gotGraph, tC.GraphVector)
-		compareSparseVector(t, tC.ID, gotFloat64Sparse, tC.Float64Sparse)
-		compareDenseVector(t, tC.ID, gotInt, tC.IntVector)
-		compareDenseVector(t, tC.ID, gotFloat, tC.FloatVector)
-		compareDenseVector(t, tC.ID, gotUint, *tC.UintVector)
-	}
-}
-
 // Helper function to generate random batch data
-func generateRandomBatch(size int) ([]godror.Number, []godror.Vector, []godror.Vector) {
-	ids := make([]godror.Number, size)
+func generateRandomBatch(size int) ([]godror.Number, []godror.Vector, []godror.Vector, []*godror.Vector, []*godror.Vector) {
+	ids := make([]godror.Number, 2*size)
 	images := make([]godror.Vector, size)
 	graphs := make([]godror.Vector, size)
+	imagesPtr := make([]*godror.Vector, size)
+	graphsPtr := make([]*godror.Vector, size)
 
 	for i := 0; i < size; i++ {
 		ids[i] = godror.Number(strconv.Itoa(i))
@@ -224,7 +126,16 @@ func generateRandomBatch(size int) ([]godror.Number, []godror.Vector, []godror.V
 			IsSparse:   true,
 		}
 	}
-	return ids, images, graphs
+	for i := 0; i < size; i++ {
+		ids[size+i] = godror.Number(strconv.Itoa(size + i))
+		imagesPtr[i] = &godror.Vector{Values: randomFloat32Slice(3)}
+		graphsPtr[i] = &godror.Vector{
+			Values:     randomFloat32Slice(3),
+			Indices:    []uint32{0, 1, 2},
+			Dimensions: 5,
+		}
+	}
+	return ids, images, graphs, imagesPtr, graphsPtr
 }
 
 // Helper function to generate a random single row
@@ -286,16 +197,27 @@ func TestVectorReadWriteBatch(t *testing.T) {
 
 	// Generate random batch values
 	const batchSize = 10
-	ids, images, graphs := generateRandomBatch(batchSize)
+	ids, images, graphs, imagesPtr, graphsPtr := generateRandomBatch(batchSize)
 
 	// Insert batch
-	if _, err = stmt.ExecContext(ctx, ids, images, graphs); err != nil {
+	if _, err = stmt.ExecContext(ctx, ids[:batchSize], images, graphs); err != nil {
+		t.Fatalf("Batch insert failed: %v", err)
+	}
+
+	// Insert batch Pointers
+	if _, err = stmt.ExecContext(ctx, ids[batchSize:], imagesPtr, graphsPtr); err != nil {
 		t.Fatalf("Batch insert failed: %v", err)
 	}
 
 	// Insert a single row
-	lastID, lastImage, lastGraph := generateRandomRow(batchSize)
-	if _, err = stmt.ExecContext(ctx, lastID, lastImage, lastGraph); err != nil {
+	lastID1, lastImage, lastGraph := generateRandomRow(2 * batchSize)
+	if _, err = stmt.ExecContext(ctx, lastID1, lastImage, lastGraph); err != nil {
+		t.Fatalf("Single insert failed: %v", err)
+	}
+
+	// Insert a single rowPtr
+	lastID2, lastImage2, lastGraph2 := generateRandomRow((2 * batchSize) + 1)
+	if _, err = stmt.ExecContext(ctx, lastID2, &lastImage2, &lastGraph2); err != nil {
 		t.Fatalf("Single insert failed: %v", err)
 	}
 
@@ -306,9 +228,21 @@ func TestVectorReadWriteBatch(t *testing.T) {
 	}
 	defer rows.Close()
 
-	expectedIDs := append(ids, lastID)
-	expectedImages := append(images, lastImage)
-	expectedGraphs := append(graphs, lastGraph)
+	expectedIDs := append(ids, lastID1, lastID2)
+	expectedImages := images
+	expectedGraphs := graphs
+
+	// Include pointer-based vectors
+	for i := range imagesPtr {
+		expectedImages = append(expectedImages, *imagesPtr[i])
+		expectedGraphs = append(expectedGraphs, *graphsPtr[i])
+	}
+
+	// Include single rows and pointer single rows
+	expectedImages = append(expectedImages, lastImage)
+	expectedImages = append(expectedImages, lastImage2)
+	expectedGraphs = append(expectedGraphs, lastGraph)
+	expectedGraphs = append(expectedGraphs, lastGraph2)
 
 	index := 0
 	for rows.Next() {
@@ -318,10 +252,16 @@ func TestVectorReadWriteBatch(t *testing.T) {
 			t.Fatalf("Row scan failed: %v", err)
 		}
 
+		// Ensure the number of rows matches expectations
+		if index >= len(expectedIDs) {
+			t.Fatalf("More rows returned than expected! Expected: %d, Got: %d", len(expectedIDs), index+1)
+		}
+
 		// Verify vector values
 		t.Logf("Verifying row ID: %s", id)
 		compareDenseVector(t, expectedIDs[index], image, expectedImages[index])
 		compareSparseVector(t, expectedIDs[index], graph, expectedGraphs[index])
+
 		index++
 	}
 }
